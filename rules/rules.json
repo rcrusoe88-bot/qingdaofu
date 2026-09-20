@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "largeFileThresholdBytes": 1073741824,
+  "rules": [
+    {
+      "id": "user-temp",
+      "name": "用户临时文件",
+      "description": "清理 7 天未修改的当前用户临时文件，正在使用的文件会自动跳过。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%TEMP%"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 7
+    },
+    {
+      "id": "chrome-cache",
+      "name": "Chrome 网页缓存",
+      "description": "清理 Chrome 配置目录中的网页、代码和 GPU 缓存，不处理历史记录、Cookie 和密码。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\Cache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\Code Cache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\GPUCache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\ShaderCache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\GrShaderCache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\Service Worker\\CacheStorage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "edge-cache",
+      "name": "Edge 网页缓存",
+      "description": "清理 Edge 配置目录中的网页、代码和 GPU 缓存，不处理历史记录、Cookie 和密码。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\Cache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\Code Cache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\GPUCache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\ShaderCache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\GrShaderCache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\Service Worker\\CacheStorage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "firefox-cache",
+      "name": "Firefox 网页缓存",
+      "description": "清理 Firefox 配置目录中的网页启动和着色器缓存，不处理书签、Cookie 和密码。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Mozilla\\Firefox\\Profiles\\*\\cache2",
+        "%APPDATA%\\Mozilla\\Firefox\\Profiles\\*\\startupCache",
+        "%APPDATA%\\Mozilla\\Firefox\\Profiles\\*\\shader-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "windows-thumbnail-cache",
+      "name": "缩略图和图标缓存",
+      "description": "清理 Windows Explorer 生成的缩略图和图标缓存，系统会按需自动重建。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\thumbcache_*.db",
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\iconcache_*.db"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": false,
+      "minAgeDays": 0
+    },
+    {
+      "id": "discord-cache",
+      "name": "Discord 缓存",
+      "description": "仅清理 Discord 的网页、代码和 GPU 缓存，不处理账号和聊天数据。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\discord\\Cache",
+        "%APPDATA%\\discord\\Code Cache",
+        "%APPDATA%\\discord\\GPUCache",
+        "%APPDATA%\\discord\\Service Worker\\CacheStorage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "slack-cache",
+      "name": "Slack 缓存",
+      "description": "仅清理 Slack 的网页、代码和 GPU 缓存，不处理账号和工作区数据。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Slack\\Cache",
+        "%APPDATA%\\Slack\\Code Cache",
+        "%APPDATA%\\Slack\\GPUCache",
+        "%APPDATA%\\Slack\\Service Worker\\CacheStorage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "downloads-old-90",
+      "name": "90 天未访问的下载文件",
+      "description": "将下载目录中 90 天未修改的文件移入回收站，不永久删除。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\Downloads"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": false,
+      "minAgeDays": 90
+    },
+    {
+      "id": "desktop-installers-old-90",
+      "name": "桌面旧安装包",
+      "description": "将桌面中 90 天未修改的安装包移入回收站，不永久删除。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\Desktop"
+      ],
+      "filePatterns": [
+        "*.exe",
+        "*.msi",
+        "*.msix",
+        "*.iso"
+      ],
+      "recurse": false,
+      "minAgeDays": 90
+    },
+    {
+      "id": "large-user-files",
+      "name": "大于 1GB 的用户文件",
+      "description": "只读展示用户目录中大于 1GB 的文件，不会提供删除操作。",
+      "kind": "large-files",
+      "risk": "readonly",
+      "action": "",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\Desktop",
+        "%USERPROFILE%\\Documents",
+        "%USERPROFILE%\\Downloads",
+        "%USERPROFILE%\\Pictures",
+        "%USERPROFILE%\\Videos",
+        "%USERPROFILE%\\Music",
+        "%USERPROFILE%\\OneDrive"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    }
+  ]
+}
