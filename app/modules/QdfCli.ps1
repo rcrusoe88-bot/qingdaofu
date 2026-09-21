@@ -11,7 +11,7 @@ Exit codes: 0 success, 2 argument/file error, 3 crash.
 Does NOT dot-source Gui*.ps1 (no WinForms dependency).
 #>
 
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('scan', 'clean', 'history', 'receipt', 'strings')]
@@ -31,6 +31,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+# The GUI hands over -RuleIds as a single comma-joined argument, because
+# PowerShell's -File binding cannot split an array (see gui/psproc.go). Empty
+# entries are kept on purpose: "-RuleIds ''" means "nothing was selected", and
+# filtering it away would leave Count at 0, which the branches below read as
+# "no -RuleIds given at all" and turn into a full scan.
+$RuleIds = @($RuleIds -split ',')
 
 $script:QdfCliExitCode = 0
 
