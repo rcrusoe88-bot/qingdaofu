@@ -1,6 +1,6 @@
 # 清道夫
 
-**➡️ [下载最新版 qingdaofu-portable-v1.0.0.zip](https://github.com/rcrusoe88-bot/qingdaofu/releases/download/v1.0.0/qingdaofu-portable-v1.0.0.zip)** （9.7 MB） · [查看所有版本](../../releases)
+**➡️ [下载最新版 qingdaofu-portable-v1.0.1.zip](https://github.com/rcrusoe88-bot/qingdaofu/releases/download/v1.0.1/qingdaofu-portable-v1.0.1.zip)** （9.8 MB） · [查看所有版本](../../releases)
 
 解压 → 双击 `启动清道夫.cmd`。压缩包里的「使用前必读.txt」写了完整三步和会遇到的警告。
 
