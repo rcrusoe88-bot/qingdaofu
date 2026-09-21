@@ -1,409 +1,115 @@
-<div align="center">
-  <img src="https://cdn.tw93.fun/pic/cole.png" alt="Mole Logo" width="120" height="120" style="border-radius:50%" />
-  <h1>Mole</h1>
-  <p><em>Deep clean and optimize your Windows.</em></p>
-</div>
+# 清道夫
 
-<p align="center">
-  <a href="https://github.com/tw93/mole/stargazers"><img src="https://img.shields.io/github/stars/tw93/mole?style=flat-square" alt="Stars"></a>
-  <img src="https://img.shields.io/badge/channel-windows%20source-orange?style=flat-square" alt="Channel">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
-  <a href="https://github.com/tw93/mole/commits"><img src="https://img.shields.io/github/commit-activity/m/tw93/mole?style=flat-square" alt="Commits"></a>
-  <a href="https://twitter.com/HiTw93"><img src="https://img.shields.io/badge/follow-Tw93-red?style=flat-square&logo=Twitter" alt="Twitter"></a>
-  <a href="https://t.me/+GclQS9ZnxyI2ODQ1"><img src="https://img.shields.io/badge/chat-Telegram-blueviolet?style=flat-square&logo=Telegram" alt="Telegram"></a>
-</p>
+**➡️ [下载最新版 qingdaofu-portable-v1.0.0.zip](https://github.com/rcrusoe88-bot/qingdaofu/releases/download/v1.0.0/qingdaofu-portable-v1.0.0.zip)** （9.7 MB） · [查看所有版本](../../releases)
 
-> [!WARNING]
-> **Experimental Status**: The Windows version is currently **not mature**. If your computer is critical or contains important data, **please do not use this tool**.
+解压 → 双击 `启动清道夫.cmd`。压缩包里的「使用前必读.txt」写了完整三步和会遇到的警告。
 
-## Features
+> **会被 Windows 和杀毒软件拦，这是正常的。** 清道夫没有数字签名，而且它的工作就是删文件 —— 这个行为特征跟恶意软件相似。所有清理工具都会被拦，不是程序有问题。
+>
+> - 弹出「Windows 已保护你的电脑」→ 点「更多信息」→ 点「仍要运行」
+> - 杀毒软件报警，或解压到一半文件被隔离 → 把解压出来的文件夹整个加进白名单
 
-- **All-in-one toolkit**: CCleaner, IObit Uninstaller, WinDirStat, and Task Manager combined into a single PowerShell toolkit
-- **Deep cleaning**: Scans and removes temp files, caches, and browser leftovers to reclaim gigabytes of space
-- **Smart uninstaller**: Thoroughly removes apps along with AppData, preferences, and hidden remnants
-- **Disk insights**: Visualizes usage, manages large files, and refreshes system services
-- **Live monitoring**: Real-time stats for CPU, memory, disk, and network to diagnose performance issues
-- **Source channel updates**: Install from the `windows` branch and refresh to the latest source with `mo update`
+---
 
-## Platform Support
+清道夫是一个面向 Windows 普通用户的便携式空间清理工具。它基于
+[tw93/Mole](https://github.com/tw93/Mole) 的 `windows` 分支继续开发，
+只处理当前用户权限下的已知缓存和候选文件。
 
-Mole is designed for Windows 10/11. This is the native Windows version ported from the [macOS original](https://github.com/tw93/Mole/tree/main). For macOS users, please visit the [main branch](https://github.com/tw93/Mole) for the native macOS version.
+不需要管理员权限，不联网，不上传文件路径、文件名或软件清单。
 
-## Requirements
+## 使用方式
 
-- Windows 10/11
-- PowerShell 5.1 or later (pre-installed on Windows 10/11)
-- Git (required for source-channel install and `mo update`)
-- Go 1.24+ (optional, only needed when building TUI tools locally)
+1. 解压整个便携包（不要只把 exe 拷出来，它需要同目录的 `app\` 和 `rules\`）。
+2. 双击 `启动清道夫.cmd`。
+3. 在「清理」页点「开始扫描」。
+4. 展开类别、检查路径后，勾选需要处理的内容。
+5. 确认后执行清理，并查看操作回执。
 
-## Quick Start
+界面分三个页签：
 
-### Quick Install (One-Liner)
+- **清理** —— 扫描 → 勾选 → 清理 → 回执。
+- **分析** —— 列出用户目录中大于 1GB 的文件，只读展示，不提供删除。
+- **记录** —— 历次操作的历史与回执详情。
 
-**Recommended:** Run this single command in PowerShell:
+扫描本身不会删除文件。明确可再生的缓存会在最终确认后永久删除；
+可能包含个人内容的项目会移入回收站。
+
+## 扫描范围
+
+按「可再生缓存 / 需要你确认」分成两组。默认勾选的都是**删掉之后会自动重建**
+的缓存，不增加误删风险。
+
+**可再生缓存（默认勾选，永久删除）**
+
+| 类别 | 覆盖内容 |
+| --- | --- |
+| 显卡缓存 | NVIDIA / AMD / Intel 的着色器缓存，DirectX 与 Vulkan 缓存 |
+| 浏览器 | Chrome、Edge、Firefox、Brave、Opera 的网页与着色器缓存 |
+| 开发缓存 | npm / Yarn / Bun / pip / Poetry / NuGet / Go / Cargo / Gradle 等包缓存，VS Code、JetBrains、Visual Studio、Zed、Sublime 的索引与缓存 |
+| 聊天与影音 | Discord、Slack、Teams、Zoom、Spotify、应用商店缓存 |
+| 办公与创意 | Office 文档缓存、Adobe 媒体缓存、Autodesk 缓存 |
+| 云同步 | OneDrive 与 Google Drive 的同步日志 |
+| 游戏启动器 | Steam、Epic、EA、GOG、育碧、战网的启动器缓存 |
+| 系统与用户项 | 用户临时文件、缩略图与图标缓存、错误报告与崩溃转储 |
+
+**需要你确认（默认不勾选，移入回收站）**
+
+| 类别 | 覆盖内容 |
+| --- | --- |
+| 下载与安装包 | 90 天未修改的下载文件、桌面上的旧安装包 |
+| 录屏与截图 | 90 天前的游戏录屏、截图与游戏回放 |
+| 国内软件 | 微信的日志、内置浏览器缓存、小程序与视频号插件 |
+| 办公与创意 | Office 自动恢复留下的临时文件（只处理 7 天前的） |
+
+**只读展示**：用户常用目录中大于 1GB 的文件，不提供删除操作。
+
+> 规则表是数据驱动的（`rules\rules.json`）。某台机器上没装对应软件时，
+> 那一类会扫到 0 个文件并自动隐藏，不会出现在界面上。
+
+## 安全边界
+
+- 不请求管理员权限。
+- 不清理注册表、WinSxS、Windows Update、休眠文件和系统还原点。
+- 不强制关闭浏览器或其他应用，被占用文件会跳过。
+- 不扫描重解析点，不跟随目录联接或符号链接。
+- 所有候选文件必须位于规则展开出的目录内，并通过保护路径校验。
+- 保护名单覆盖系统目录、密钥与凭据目录（`.ssh`、`.aws`、`.kube` 等），
+  以及浏览器 Cookie、登录数据、聊天数据库这类文件。
+- 永久删除与移入回收站会在确认窗口中分别列出。
+- 回收站中的文件仍然占用磁盘空间，需要用户自行清空回收站后才会释放。
+- 清理前会重新扫描一次候选文件，只删除这次扫描确认过的文件。
+
+## 数据位置
+
+程序运行数据保存在：
+
+```text
+%LOCALAPPDATA%\QingDaoFu
+```
+
+其中 `receipts` 保存每次操作的候选文件回执，`logs` 保存摘要日志。
+清道夫不会联网，也不会上传文件路径、文件名或软件清单。
+
+## 系统要求
+
+- Windows 10 22H2 或 Windows 11 x64。
+- 普通用户权限。
+- WebView2 运行时（Windows 11 与较新的 Windows 10 已内置）。
+
+## 开发与验证
 
 ```powershell
-iwr -useb https://raw.githubusercontent.com/tw93/Mole/windows/quick-install.ps1 | iex
+# 单元测试
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\qdf-tests\Run-Tests.ps1
+
+# 打包便携版（会先构建 GUI，产物在 dist\）
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\Build-Portable.ps1
+
+# 只读探测：在当前机器上验证清理目标路径与体积，不删除任何文件
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Probe-Targets.ps1
 ```
 
-This will clone the latest `windows` branch into your install directory and configure PATH.
+## 许可证
 
-### Manual Installation
-
-If you prefer to review the code first or customize the installation:
-
-```powershell
-# Clone the windows branch into your install directory
-$installDir = "$env:LOCALAPPDATA\Mole"
-git clone --branch windows https://github.com/tw93/Mole.git $installDir
-cd $installDir
-
-# Run the installer in place (keeps .git for mo update)
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir $installDir -AddToPath
-
-# Optional: Create Start Menu shortcut
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir $installDir -AddToPath -CreateShortcut
-```
-
-Run:
-
-```powershell
-mo                       # Interactive menu
-mo clean                 # Deep cleanup
-mo uninstall             # Remove apps + leftovers
-mo optimize              # Refresh caches & services
-mo analyze               # Visual disk explorer
-mo status                # Live system health dashboard
-mo update                # Pull the latest windows source
-mo remove                # Remove Mole from this system
-mo purge                 # Clean project build artifacts
-
-mo --help                # Show help
-mo --version             # Show installed version
-
-mo clean --dry-run       # Preview the cleanup plan
-mo clean --whitelist     # Manage protected caches
-mo clean --dry-run --debug # Detailed preview with risk levels
-
-mo optimize --dry-run    # Preview optimization actions
-mo optimize --debug      # Run with detailed operation logs
-mo purge --paths         # Configure project scan directories
-```
-
-Source-channel installs can later be refreshed with:
-
-```powershell
-mo update
-```
-
-If a matching Windows prerelease exists for the installed version, Mole will reuse/download prebuilt `analyze` and `status` binaries before falling back to a local Go build.
-
-## macOS Parity
-
-Windows is closest to macOS on these commands:
-
-- `clean`
-- `uninstall`
-- `optimize`
-- `analyze`
-- `status`
-- `purge`
-- `update`
-- `remove`
-
-Still missing or intentionally platform-specific compared with `main`:
-
-- `installer`: no dedicated Windows installer-file cleanup command yet
-- `completion`: no PowerShell completion setup command yet
-- `touchid`: macOS-only, not applicable on Windows
-- Release channels: Windows currently uses a git source channel, not Homebrew/stable release installs
-- Update options: `mo update --nightly` is not implemented on Windows
-- Optimization controls: `mo optimize --whitelist` is not implemented on Windows
-- Some UI depth: macOS `status` and `analyze` expose richer device-specific details than Windows today
-- Windows prereleases use `Vx.y.z-windows` tags so they stay isolated from the macOS stable release channel
-
-## Tips
-
-- **Safety**: Built with strict protections. Preview changes with `mo clean --dry-run`.
-- **Be Careful**: Although safe by design, file deletion is permanent. Please review operations carefully.
-- **Debug Mode**: Use `--debug` for detailed logs (e.g., `mo clean --debug`). Combine with `--dry-run` for comprehensive preview including risk levels and file details.
-- **Navigation**: Supports arrow keys for TUI navigation.
-- **Configuration**: Use `mo clean --whitelist` to manage protected paths, `mo purge --paths` to configure scan directories.
-
-## Features in Detail
-
-### Deep System Cleanup
-
-```powershell
-mo clean
-```
-
-```
-Scanning cache directories...
-
-  ✓ User temp files                              12.3GB
-  ✓ Browser cache (Chrome, Edge, Firefox)         8.5GB
-  ✓ Developer tools (Node.js, npm, Python)       15.2GB
-  ✓ Windows logs and temp files                   4.1GB
-  ✓ App-specific cache (Spotify, Slack, VS Code)  6.8GB
-  ✓ Recycle Bin                                    9.2GB
-
-====================================================================
-Space freed: 56.1GB | Free space now: 180.3GB
-====================================================================
-```
-
-### Smart App Uninstaller
-
-```powershell
-mo uninstall
-```
-
-```
-Select Apps to Remove
-═══════════════════════════
-▶ ☑ Adobe Photoshop 2024     (4.2GB) | Old
-  ☐ IntelliJ IDEA             (2.8GB) | Recent
-  ☐ Premiere Pro              (3.4GB) | Recent
-
-Uninstalling: Adobe Photoshop 2024
-
-  ✓ Removed application
-  ✓ Cleaned 52 related files across 8 locations
-    - AppData, Caches, Preferences
-    - Logs, Registry entries
-    - Extensions, Plugins
-
-====================================================================
-Space freed: 4.8GB
-====================================================================
-```
-
-### System Optimization
-
-```powershell
-mo optimize
-```
-
-```
-System: 12/32 GB RAM | 280/460 GB Disk (61%) | Uptime 6d
-
-  ✓ Clear Windows Update cache
-  ✓ Reset DNS cache
-  ✓ Clean event logs and diagnostic reports
-  ✓ Refresh Windows Search index
-  ✓ Clear thumbnail cache
-  ✓ Optimize startup programs
-  ✓ System repairs (Font/Icon/Store/Search)
-
-====================================================================
-System optimization completed
-====================================================================
-```
-
-### Disk Space Analyzer
-
-```powershell
-mo analyze
-```
-
-```
-Analyze Disk  C:\Users\YourName\Documents  |  Total: 156.8GB
-
- ▶  1. ███████████████████  48.2%  |  📁 Downloads           75.4GB  >6mo
-    2. ██████████░░░░░░░░░  22.1%  |  📁 Videos              34.6GB
-    3. ████░░░░░░░░░░░░░░░  14.3%  |  📁 Pictures            22.4GB
-    4. ███░░░░░░░░░░░░░░░░  10.8%  |  📁 Documents           16.9GB
-    5. ██░░░░░░░░░░░░░░░░░   5.2%  |  📄 backup_2023.zip      8.2GB
-
-  ↑↓←→ Navigate  |  O Open  |  F Show  |  Del Delete  |  L Large files  |  Q Quit
-```
-
-### Live System Status
-
-Real-time dashboard with system health score, hardware info, and performance metrics.
-
-```powershell
-mo status
-```
-
-```
-Mole Status  Health ● 92  Desktop PC · Intel i7 · 32GB · Windows 11
-
-⚙ CPU                                    ▦ Memory
-Total   ████████████░░░░░░░ 45.2%       Used    ███████████░░░░░░░  58.4%
-Load    0.82 / 1.05 / 1.23 (8 cores)    Total   18.7 / 32.0 GB
-Core 1  ███████████████░░░░  78.3%      Free    ████████░░░░░░░░░░  41.6%
-Core 2  ████████████░░░░░░░  62.1%      Avail   13.3 GB
-
-▤ Disk                                   ⚡ Power
-Used    █████████████░░░░░░  67.2%      Status  AC Power
-Free    156.3 GB                         Temp    58°C
-Read    ▮▯▯▯▯  2.1 MB/s
-Write   ▮▮▮▯▯  18.3 MB/s
-
-⇅ Network                                ▶ Processes
-Down    ▮▮▯▯▯  3.2 MB/s                 Code       ▮▮▮▮▯  42.1%
-Up      ▮▯▯▯▯  0.8 MB/s                 Chrome     ▮▮▮▯▯  28.3%
-```
-
-Health score based on CPU, memory, disk, temperature, and I/O load. Color-coded by range.
-
-### Project Artifact Purge
-
-Clean old build artifacts (`node_modules`, `target`, `build`, `dist`, etc.) from your projects to free up disk space.
-
-```powershell
-mo purge
-```
-
-```
-Select Categories to Clean - 18.5GB (8 selected)
-
-➤ ● my-react-app      3.2GB | node_modules
-  ● old-project       2.8GB | node_modules
-  ● rust-app          4.1GB | target
-  ● next-blog         1.9GB | node_modules
-  ○ current-work      856MB | node_modules  | Recent
-  ● django-api        2.3GB | venv
-  ● vue-dashboard     1.7GB | node_modules
-  ● backend-service   2.5GB | node_modules
-```
-
-Use with caution: This will permanently delete selected artifacts. Review carefully before confirming. Recent projects — less than 7 days old — are marked and unselected by default.
-
-Custom scan paths can be configured with `mo purge --paths`.
-
-## Installation Options
-
-### Manual Installation
-
-```powershell
-# Install to custom location from a cloned windows branch
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir C:\Tools\Mole -AddToPath
-
-# Create Start Menu shortcut
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -InstallDir C:\Tools\Mole -AddToPath -CreateShortcut
-
-# Refresh the source channel later
-mo update
-```
-
-### Uninstall
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
-```
-
-## Configuration
-
-Mole stores its configuration in:
-
-- Config: `~\.config\mole\`
-- Cache: `~\.cache\mole\`
-- Whitelist: `~\.config\mole\whitelist.txt`
-- Purge paths: `~\.config\mole\purge_paths.txt`
-
-## Directory Structure
-
-```
-mole/ (windows branch)
-├── mole.ps1          # Main CLI entry point
-├── install.ps1       # Windows installer
-├── Makefile          # Build automation for Go tools
-├── go.mod            # Go module definition
-├── go.sum            # Go dependencies
-├── bin/
-│   ├── clean.ps1     # Deep cleanup orchestrator
-│   ├── uninstall.ps1 # Interactive app uninstaller
-│   ├── optimize.ps1  # System optimization
-│   ├── purge.ps1     # Project artifact cleanup
-│   ├── analyze.ps1   # Disk analyzer wrapper
-│   ├── status.ps1    # Status monitor wrapper
-│   ├── update.ps1    # Source channel updater
-│   └── remove.ps1    # Self-uninstall wrapper
-├── cmd/
-│   ├── analyze/      # Disk analyzer (Go TUI)
-│   │   └── main.go
-│   └── status/       # System status (Go TUI)
-│       └── main.go
-└── lib/
-    ├── core/
-    │   ├── base.ps1      # Core definitions and utilities
-    │   ├── common.ps1    # Common functions loader
-    │   ├── file_ops.ps1  # Safe file operations
-    │   ├── log.ps1       # Logging functions
-    │   ├── tui_binaries.ps1 # TUI binary restore/build helpers
-    │   └── ui.ps1        # Interactive UI components
-    └── clean/
-        ├── user.ps1      # User cleanup (temp, downloads, etc.)
-        ├── caches.ps1    # Browser and app caches
-        ├── dev.ps1       # Developer tool caches
-        ├── apps.ps1      # Application leftovers
-        └── system.ps1    # System cleanup (requires admin)
-```
-
-## Building TUI Tools
-
-Install Go if you want to build the analyze and status tools locally:
-
-```powershell
-# From the repository root
-
-# Build both tools
-make build
-
-# Or build individually
-go build -o bin/analyze.exe ./cmd/analyze/
-go build -o bin/status.exe ./cmd/status/
-
-# The wrapper scripts try bin/ first, then Windows prerelease assets,
-# then auto-build if Go is available
-```
-
-## Support
-
-- If Mole saved you disk space, consider starring the repo or [sharing it](https://twitter.com/intent/tweet?url=https://github.com/tw93/Mole/tree/windows&text=Mole%20-%20Deep%20clean%20and%20optimize%20your%20Windows%20PC.) with friends.
-- Have ideas or fixes? Check our [Contributing Guide](https://github.com/tw93/Mole/blob/windows/CONTRIBUTING.md), then open an issue or PR to help shape Mole's future.
-- Love Mole? [Buy Tw93 an ice-cold Coke](https://miaoyan.app/cats.html?name=Mole) to keep the project alive and kicking! 🥤
-
-## Community Love
-
-### Phase 1: Core Infrastructure ✅
-
-- [x] `install.ps1` - Windows installer
-- [x] `mole.ps1` - Main CLI entry point
-- [x] `lib/core/*` - Core utility libraries
-
-### Phase 2: Cleanup Features ✅
-
-- [x] `bin/clean.ps1` - Deep cleanup orchestrator
-- [x] `bin/uninstall.ps1` - App removal with leftover detection
-- [x] `bin/optimize.ps1` - System optimization
-- [x] `bin/purge.ps1` - Project artifact cleanup
-- [x] `lib/clean/*` - Cleanup modules
-
-### Phase 3: TUI Tools ✅
-
-- [x] `cmd/analyze/` - Disk usage analyzer (Go)
-- [x] `cmd/status/` - Real-time system monitor (Go)
-- [x] `bin/analyze.ps1` - Analyzer wrapper
-- [x] `bin/status.ps1` - Status wrapper
-- [x] `bin/update.ps1` - Source channel updater
-- [x] `bin/remove.ps1` - Self-uninstall wrapper
-
-### Phase 4: Testing & CI (Planned)
-
-- [ ] `tests/` - Pester tests
-- [ ] GitHub Actions workflows
-- [ ] `scripts/build.ps1` - Build automation
-
-Mole wouldn't be possible without these amazing contributors. They've built countless features that make Mole what it is today. Go follow them! ❤️
-
-[![Contributors](https://contrib.rocks/image?repo=tw93/Mole)](https://github.com/tw93/Mole/graphs/contributors)
-
-Join thousands of users worldwide who trust Mole to keep their systems clean and optimized.
-
-## License
-
-MIT License — feel free to enjoy and participate in open source.
+项目继续使用 MIT 许可证。来源说明见 `THIRD_PARTY_NOTICES.md`。
+上游 [tw93/Mole](https://github.com/tw93/Mole) 的原始说明保留在 `README-MOLE.md`。

@@ -48,7 +48,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot $launcherName) -Destination $pack
 Copy-Item -LiteralPath (Join-Path $projectRoot $quickStartName) -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $packageRoot
-Copy-Item -LiteralPath (Join-Path $projectRoot 'README-QINGDAO.md') -Destination (Join-Path $packageRoot 'README.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $packageRoot
 
 # Zip the folder itself rather than its contents, so extracting yields a single
 # 清道夫-Portable\ directory instead of scattering a dozen files into whatever
