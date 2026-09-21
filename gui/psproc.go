@@ -12,6 +12,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 var errKilled = errors.New("process killed by user")
@@ -74,8 +77,11 @@ func (r *runner) run(command string, ruleIds []string, dryRun bool, onLine func(
 		"-Command", command,
 	}
 	if len(ruleIds) > 0 {
-		args = append(args, "-RuleIds")
-		args = append(args, ruleIds...)
+		// PowerShell's -File binding does not split arrays: "-RuleIds a b c"
+		// binds only "a" and spills b/c onto the script's positional
+		// parameters, which aborts the script before it runs. Pass one
+		// comma-joined argument; QdfCli.ps1 unfolds it again.
+		args = append(args, "-RuleIds", strings.Join(ruleIds, ","))
 	}
 	if dryRun {
 		args = append(args, "-DryRun")
@@ -124,9 +130,9 @@ func (r *runner) run(command string, ruleIds []string, dryRun bool, onLine func(
 		return errKilled
 	}
 	if waitErr != nil {
-		detail := strings.TrimSpace(stderrBuf.String())
-		if detail != "" && len(detail) > 400 {
-			detail = detail[:400]
+		detail := strings.TrimSpace(decodeConsoleOutput(stderrBuf.Bytes()))
+		if r := []rune(detail); len(r) > 400 {
+			detail = string(r[:400])
 		}
 		return fmt.Errorf("核心组件退出异常（%v）%s", waitErr, detailSuffix(detail))
 	}
@@ -147,4 +153,20 @@ func detailSuffix(detail string) string {
 		return ""
 	}
 	return "：" + detail
+}
+
+// decodeConsoleOutput recovers text from PowerShell's stderr. QdfCli.ps1
+// switches the console to UTF-8, but anything PowerShell itself reports
+// before the script body runs — a parameter binding failure, say — is still
+// written in the system OEM code page (GBK on zh-CN), which would reach the
+// UI as mojibake. UTF-8 is tried first because GBK bytes are rarely valid
+// UTF-8.
+func decodeConsoleOutput(raw []byte) string {
+	if utf8.Valid(raw) {
+		return string(raw)
+	}
+	if decoded, err := simplifiedchinese.GBK.NewDecoder().Bytes(raw); err == nil {
+		return string(decoded)
+	}
+	return string(raw)
 }
