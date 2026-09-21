@@ -58,6 +58,7 @@ tests/AGENTS.md
 
 # Build artifacts
 dist/
+gui/build/bin/
 analyze
 status
 bin/analyze-*

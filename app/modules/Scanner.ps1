@@ -40,6 +40,13 @@ function Test-QdfRuleset {
         if (@('safe', 'careful', 'readonly') -notcontains $risk) {
             throw "Unsupported risk level for '$id': $risk"
         }
+
+        # Optional so an older ruleset keeps loading: a missing category falls
+        # back to the UI's catch-all group. Only an over-long value is an error.
+        $category = [string](Get-QdfPropertyValue -Object $rule -Name 'category' -DefaultValue '')
+        if ($category.Length -gt 40) {
+            throw "Rule category is too long for '$id'."
+        }
     }
 }
 
@@ -169,6 +176,7 @@ function Invoke-QdfScan {
             Id = [string](Get-QdfPropertyValue -Object $rule -Name 'id' -DefaultValue '')
             Name = [string](Get-QdfPropertyValue -Object $rule -Name 'name' -DefaultValue '')
             Description = [string](Get-QdfPropertyValue -Object $rule -Name 'description' -DefaultValue '')
+            Category = [string](Get-QdfPropertyValue -Object $rule -Name 'category' -DefaultValue '')
             Risk = [string](Get-QdfPropertyValue -Object $rule -Name 'risk' -DefaultValue 'safe')
             Action = [string](Get-QdfPropertyValue -Object $rule -Name 'action' -DefaultValue 'delete')
             DefaultSelected = [bool](Get-QdfPropertyValue -Object $rule -Name 'defaultSelected' -DefaultValue $false)

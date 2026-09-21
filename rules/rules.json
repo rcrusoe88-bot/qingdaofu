@@ -4,6 +4,7 @@
   "rules": [
     {
       "id": "user-temp",
+      "category": "系统与用户项",
       "name": "用户临时文件",
       "description": "清理 7 天未修改的当前用户临时文件，正在使用的文件会自动跳过。",
       "kind": "cleanup",
@@ -21,6 +22,7 @@
     },
     {
       "id": "chrome-cache",
+      "category": "浏览器",
       "name": "Chrome 网页缓存",
       "description": "清理 Chrome 配置目录中的网页、代码和 GPU 缓存，不处理历史记录、Cookie 和密码。",
       "kind": "cleanup",
@@ -43,6 +45,7 @@
     },
     {
       "id": "edge-cache",
+      "category": "浏览器",
       "name": "Edge 网页缓存",
       "description": "清理 Edge 配置目录中的网页、代码和 GPU 缓存，不处理历史记录、Cookie 和密码。",
       "kind": "cleanup",
@@ -65,6 +68,7 @@
     },
     {
       "id": "firefox-cache",
+      "category": "浏览器",
       "name": "Firefox 网页缓存",
       "description": "清理 Firefox 配置目录中的网页启动和着色器缓存，不处理书签、Cookie 和密码。",
       "kind": "cleanup",
@@ -84,6 +88,7 @@
     },
     {
       "id": "windows-thumbnail-cache",
+      "category": "系统与用户项",
       "name": "缩略图和图标缓存",
       "description": "清理 Windows Explorer 生成的缩略图和图标缓存，系统会按需自动重建。",
       "kind": "cleanup",
@@ -102,6 +107,7 @@
     },
     {
       "id": "discord-cache",
+      "category": "聊天与影音",
       "name": "Discord 缓存",
       "description": "仅清理 Discord 的网页、代码和 GPU 缓存，不处理账号和聊天数据。",
       "kind": "cleanup",
@@ -122,6 +128,7 @@
     },
     {
       "id": "slack-cache",
+      "category": "聊天与影音",
       "name": "Slack 缓存",
       "description": "仅清理 Slack 的网页、代码和 GPU 缓存，不处理账号和工作区数据。",
       "kind": "cleanup",
@@ -142,6 +149,7 @@
     },
     {
       "id": "downloads-old-90",
+      "category": "下载与安装包",
       "name": "90 天未访问的下载文件",
       "description": "将下载目录中 90 天未修改的文件移入回收站，不永久删除。",
       "kind": "cleanup",
@@ -159,6 +167,7 @@
     },
     {
       "id": "desktop-installers-old-90",
+      "category": "下载与安装包",
       "name": "桌面旧安装包",
       "description": "将桌面中 90 天未修改的安装包移入回收站，不永久删除。",
       "kind": "cleanup",
@@ -179,6 +188,7 @@
     },
     {
       "id": "large-user-files",
+      "category": "只读大文件",
       "name": "大于 1GB 的用户文件",
       "description": "只读展示用户目录中大于 1GB 的文件，不会提供删除操作。",
       "kind": "large-files",
@@ -193,6 +203,1187 @@
         "%USERPROFILE%\\Videos",
         "%USERPROFILE%\\Music",
         "%USERPROFILE%\\OneDrive"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "gpu-nvidia",
+      "category": "显卡缓存",
+      "name": "NVIDIA 着色器缓存",
+      "description": "游戏与视频软件的显卡着色器编译缓存，删掉后首次运行会重建。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\NVIDIA\\DXCache",
+        "%LOCALAPPDATA%\\NVIDIA\\GLCache",
+        "%LOCALAPPDATA%\\NVIDIA Corporation\\NV_Cache",
+        "%TEMP%\\NVIDIA Corporation\\NV_Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "gpu-amd",
+      "category": "显卡缓存",
+      "name": "AMD 着色器缓存",
+      "description": "AMD 显卡的 DirectX / OpenGL / Vulkan 着色器缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\AMD\\DXCache",
+        "%LOCALAPPDATA%\\AMD\\GLCache",
+        "%LOCALAPPDATA%\\AMD\\VkCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "gpu-intel",
+      "category": "显卡缓存",
+      "name": "Intel 着色器缓存",
+      "description": "Intel 核显的着色器缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Intel\\ShaderCache",
+        "%APPDATA%\\Intel\\ShaderCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "gpu-directx",
+      "category": "显卡缓存",
+      "name": "DirectX 着色器缓存",
+      "description": "Windows 自带的 DirectX 着色器缓存，系统会自动重建。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\D3DSCache",
+        "%LOCALAPPDATA%\\Microsoft\\DirectX Shader Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "gpu-vulkan",
+      "category": "显卡缓存",
+      "name": "Vulkan 着色器缓存",
+      "description": "Vulkan 着色器缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\VulkanCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "browser-brave",
+      "category": "浏览器",
+      "name": "Brave 网页缓存",
+      "description": "清理 Brave 的网页缓存，不处理历史记录、Cookie 和密码。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\Cache",
+        "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\Code Cache",
+        "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\GPUCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "browser-opera",
+      "category": "浏览器",
+      "name": "Opera 网页缓存",
+      "description": "清理 Opera 的网页缓存，不处理历史记录、Cookie 和密码。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Opera Software\\Opera Stable\\Cache",
+        "%APPDATA%\\Opera Software\\Opera Stable\\Code Cache",
+        "%APPDATA%\\Opera Software\\Opera Stable\\GPUCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "browser-chrome-shader",
+      "category": "浏览器",
+      "name": "Chrome 着色器缓存",
+      "description": "Chrome 的 ShaderCache 与 GrShaderCache。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\ShaderCache",
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\GrShaderCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "browser-edge-shader",
+      "category": "浏览器",
+      "name": "Edge 着色器缓存",
+      "description": "Edge 的 ShaderCache 与 GrShaderCache。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\ShaderCache",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\GrShaderCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-npm",
+      "category": "开发缓存",
+      "name": "npm 缓存",
+      "description": "npm 下载过的包缓存，删掉后重新安装会重新下载。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\npm-cache",
+        "%LOCALAPPDATA%\\npm-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-yarn",
+      "category": "开发缓存",
+      "name": "Yarn 缓存",
+      "description": "Yarn 的包缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Yarn\\Cache",
+        "%USERPROFILE%\\.yarn\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-bun",
+      "category": "开发缓存",
+      "name": "Bun 安装缓存",
+      "description": "Bun 下载的包缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.bun\\install\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-node-gyp",
+      "category": "开发缓存",
+      "name": "node-gyp 缓存",
+      "description": "node-gyp 的编译头文件缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\node-gyp\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-electron",
+      "category": "开发缓存",
+      "name": "Electron 缓存",
+      "description": "Electron 下载的运行时缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\electron\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-typescript",
+      "category": "开发缓存",
+      "name": "TypeScript 缓存",
+      "description": "TypeScript 的编译信息缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\TypeScript"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-pip",
+      "category": "开发缓存",
+      "name": "pip 缓存",
+      "description": "Python 包下载缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\pip\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-poetry",
+      "category": "开发缓存",
+      "name": "Poetry 缓存",
+      "description": "Poetry 的包缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\pypoetry\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-pyenv",
+      "category": "开发缓存",
+      "name": "pyenv 缓存",
+      "description": "pyenv 的下载缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.pyenv\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-jupyter",
+      "category": "开发缓存",
+      "name": "Jupyter 运行时缓存",
+      "description": "Jupyter 的运行时缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\jupyter\\runtime"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-pytest",
+      "category": "开发缓存",
+      "name": "pytest 缓存",
+      "description": "pytest 的测试结果缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.pytest_cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-nuget",
+      "category": "开发缓存",
+      "name": "NuGet 缓存",
+      "description": "NuGet 的下载缓存与插件缓存，不动已安装的包目录。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\NuGet\\v3-cache",
+        "%LOCALAPPDATA%\\NuGet\\plugins-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-msbuild",
+      "category": "开发缓存",
+      "name": "MSBuild 临时目录",
+      "description": "MSBuild 的临时编译目录。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\MSBuild\\*temp*"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-go-mod",
+      "category": "开发缓存",
+      "name": "Go 模块缓存",
+      "description": "Go 下载的模块缓存，重新构建会重新下载。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\go\\pkg\\mod\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-cargo",
+      "category": "开发缓存",
+      "name": "Rust Cargo 缓存",
+      "description": "Cargo 的包下载缓存与 git 检出缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.cargo\\registry\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-rustup",
+      "category": "开发缓存",
+      "name": "Rustup 下载缓存",
+      "description": "rustup 下载的工具链压缩包缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.rustup\\downloads"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-gradle",
+      "category": "开发缓存",
+      "name": "Gradle 缓存",
+      "description": "Gradle 的依赖与构建缓存。删掉后下一次构建需要重新下载全部依赖，所以归入需确认、移入回收站。刻意不动 daemon 目录（可能正在构建）。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\.gradle\\caches"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-aws",
+      "category": "开发缓存",
+      "name": "AWS CLI 缓存",
+      "description": "AWS 命令行的接口缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.aws\\cli\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-azure",
+      "category": "开发缓存",
+      "name": "Azure CLI 日志",
+      "description": "Azure 命令行的日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.azure\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-gcloud",
+      "category": "开发缓存",
+      "name": "gcloud 日志",
+      "description": "Google Cloud 命令行的日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\gcloud\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-kube",
+      "category": "开发缓存",
+      "name": "kubectl 缓存",
+      "description": "kubectl 的接口发现缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.kube\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-terraform",
+      "category": "开发缓存",
+      "name": "Terraform 插件缓存",
+      "description": "Terraform 的 provider 插件缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\terraform.d\\plugin-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-vscode",
+      "category": "开发缓存",
+      "name": "VS Code 缓存",
+      "description": "VS Code 的缓存与扩展安装包缓存，不动工作区记录和设置。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Code\\Cache",
+        "%APPDATA%\\Code\\CachedData",
+        "%APPDATA%\\Code\\CachedExtensions",
+        "%APPDATA%\\Code\\CachedExtensionVSIXs",
+        "%APPDATA%\\Code\\Code Cache",
+        "%APPDATA%\\Code\\GPUCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-vscode-insiders",
+      "category": "开发缓存",
+      "name": "VS Code Insiders 缓存",
+      "description": "VS Code Insiders 的缓存与扩展安装包缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Code - Insiders\\Cache",
+        "%APPDATA%\\Code - Insiders\\CachedData",
+        "%APPDATA%\\Code - Insiders\\CachedExtensions",
+        "%APPDATA%\\Code - Insiders\\CachedExtensionVSIXs",
+        "%APPDATA%\\Code - Insiders\\Code Cache",
+        "%APPDATA%\\Code - Insiders\\GPUCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-vscode-cpptools",
+      "category": "开发缓存",
+      "name": "VS Code C++ 插件缓存",
+      "description": "C/C++ 插件的智能提示索引缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\vscode-cpptools"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-zed",
+      "category": "开发缓存",
+      "name": "Zed 缓存",
+      "description": "Zed 编辑器的缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Zed\\cache",
+        "%APPDATA%\\Zed\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-sublime",
+      "category": "开发缓存",
+      "name": "Sublime Text 缓存",
+      "description": "Sublime Text 的缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Sublime Text\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-vs",
+      "category": "开发缓存",
+      "name": "Visual Studio 缓存",
+      "description": "Visual Studio 的组件模型缓存与图标缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\VisualStudio\\*\\ComponentModelCache",
+        "%LOCALAPPDATA%\\Microsoft\\VisualStudio\\*\\ImageCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-jetbrains",
+      "category": "开发缓存",
+      "name": "JetBrains 索引缓存",
+      "description": "IDEA / PyCharm / WebStorm 等 IDE 的索引与缓存，下次打开项目会重建（首次会慢一些）。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\JetBrains\\*\\caches",
+        "%LOCALAPPDATA%\\JetBrains\\*\\index",
+        "%LOCALAPPDATA%\\JetBrains\\*\\tmp"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-teams",
+      "category": "聊天与影音",
+      "name": "Teams 缓存",
+      "description": "Teams 的缓存与临时文件。刻意不动 Local Storage 和 IndexedDB（那里是登录状态）。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Microsoft\\Teams\\Cache",
+        "%APPDATA%\\Microsoft\\Teams\\GPUCache",
+        "%APPDATA%\\Microsoft\\Teams\\tmp",
+        "%APPDATA%\\Microsoft\\Teams\\blob_storage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-zoom",
+      "category": "聊天与影音",
+      "name": "Zoom 缓存",
+      "description": "Zoom 的会议数据缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Zoom\\data"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-spotify",
+      "category": "聊天与影音",
+      "name": "Spotify 缓存",
+      "description": "Spotify 的歌曲流媒体缓存，删掉后重新在线播放。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Spotify\\Data",
+        "%LOCALAPPDATA%\\Spotify\\Storage"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-store",
+      "category": "聊天与影音",
+      "name": "应用商店缓存",
+      "description": "Microsoft Store 的本地缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\WCN",
+        "%LOCALAPPDATA%\\Packages\\Microsoft.WindowsStore_*\\LocalCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-office",
+      "category": "办公与创意",
+      "name": "Office 缓存",
+      "description": "Word / Excel / PowerPoint 的文档缓存与 Outlook 的离线地址簿缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\OfficeFileCache",
+        "%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\Wef",
+        "%LOCALAPPDATA%\\Microsoft\\Office\\15.0\\OfficeFileCache",
+        "%LOCALAPPDATA%\\Microsoft\\Outlook\\RoamCache",
+        "%LOCALAPPDATA%\\Microsoft\\Outlook\\Offline Address Books"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-office-tmp",
+      "category": "办公与创意",
+      "name": "Office 自动恢复临时文件",
+      "description": "Office 自动恢复留下的 .tmp 文件。如果 Word / Excel 正开着没保存的文档，那里就是还没保存的内容——所以只处理 7 天前的，并移入回收站。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%APPDATA%\\Microsoft\\Templates",
+        "%APPDATA%\\Microsoft\\Word",
+        "%APPDATA%\\Microsoft\\Excel",
+        "%APPDATA%\\Microsoft\\PowerPoint"
+      ],
+      "filePatterns": [
+        "*.tmp"
+      ],
+      "recurse": false,
+      "minAgeDays": 7
+    },
+    {
+      "id": "app-adobe",
+      "category": "办公与创意",
+      "name": "Adobe 缓存",
+      "description": "Premiere / After Effects / Photoshop 的媒体缓存、峰值文件与 Camera Raw 缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Adobe\\Common\\Media Cache Files",
+        "%APPDATA%\\Adobe\\Common\\Peak Files",
+        "%APPDATA%\\Adobe\\Common\\Team Projects Cache",
+        "%LOCALAPPDATA%\\Adobe\\*\\Cache",
+        "%LOCALAPPDATA%\\Adobe\\*\\CameraRaw\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "app-autodesk",
+      "category": "办公与创意",
+      "name": "Autodesk 缓存",
+      "description": "AutoCAD 等 Autodesk 软件的缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Autodesk\\*\\Cache",
+        "%APPDATA%\\Autodesk\\*\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "sync-onedrive",
+      "category": "云同步",
+      "name": "OneDrive 日志",
+      "description": "OneDrive 的同步日志，不动任何同步的文件。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\OneDrive\\logs",
+        "%LOCALAPPDATA%\\Microsoft\\OneDrive\\setup\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 7
+    },
+    {
+      "id": "sync-gdrive",
+      "category": "云同步",
+      "name": "Google Drive 日志",
+      "description": "Google Drive 的同步日志与临时文件，不动任何同步的文件。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Google\\DriveFS\\Logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 7
+    },
+    {
+      "id": "game-steam",
+      "category": "游戏启动器",
+      "name": "Steam 启动器缓存",
+      "description": "Steam 客户端的网页与库缓存，不动已安装的游戏。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%ProgramFiles(x86)%\\Steam\\appcache\\httpcache",
+        "%ProgramFiles(x86)%\\Steam\\appcache\\librarycache",
+        "%ProgramFiles(x86)%\\Steam\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "game-epic",
+      "category": "游戏启动器",
+      "name": "Epic 启动器缓存",
+      "description": "Epic Games 启动器的网页缓存与日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\EpicGamesLauncher\\Saved\\webcache",
+        "%LOCALAPPDATA%\\EpicGamesLauncher\\Saved\\Logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "game-ea",
+      "category": "游戏启动器",
+      "name": "EA 启动器缓存",
+      "description": "EA App 与 Origin 的缓存。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Electronic Arts\\EA Desktop\\cache",
+        "%APPDATA%\\Origin\\*\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "game-gog",
+      "category": "游戏启动器",
+      "name": "GOG 启动器缓存",
+      "description": "GOG Galaxy 的网页缓存与日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\GOG.com\\Galaxy\\webcache",
+        "%ProgramData%\\GOG.com\\Galaxy\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "game-ubisoft",
+      "category": "游戏启动器",
+      "name": "育碧启动器缓存",
+      "description": "Ubisoft Connect 的缓存与日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Ubisoft Game Launcher\\cache",
+        "%LOCALAPPDATA%\\Ubisoft Game Launcher\\logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "game-battlenet",
+      "category": "游戏启动器",
+      "name": "战网缓存",
+      "description": "暴雪战网的缓存与日志。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\Battle.net\\Cache",
+        "%APPDATA%\\Battle.net\\Logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "shell-recent",
+      "category": "系统与用户项",
+      "name": "最近使用的文件记录",
+      "description": "资源管理器「最近使用的文件」列表与跳转列表，30 天前的记录。只删快捷方式记录，不动原文件。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%APPDATA%\\Microsoft\\Windows\\Recent"
+      ],
+      "filePatterns": [
+        "*.lnk",
+        "*.automaticDestinations-ms",
+        "*.customDestinations-ms"
+      ],
+      "recurse": false,
+      "minAgeDays": 30
+    },
+    {
+      "id": "shell-wer",
+      "category": "系统与用户项",
+      "name": "错误报告与崩溃转储",
+      "description": "Windows 错误报告和程序崩溃时留下的转储文件，只用于排查问题，可以安全删除。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\WER",
+        "%LOCALAPPDATA%\\CrashDumps"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "media-captures",
+      "category": "录屏与截图",
+      "name": "游戏录屏与截图",
+      "description": "NVIDIA ShadowPlay、Xbox 截图、OBS 录像、各类游戏回放等 90 天前的视频与图片。这些是你自己录的内容，所以只移入回收站，可随时还原。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\Videos\\NVIDIA",
+        "%USERPROFILE%\\Videos\\ShadowPlay",
+        "%USERPROFILE%\\Videos\\GeForce Experience",
+        "%USERPROFILE%\\Videos\\Radeon ReLive",
+        "%USERPROFILE%\\Videos\\Captures",
+        "%USERPROFILE%\\Videos\\Screen Recordings",
+        "%USERPROFILE%\\Videos\\OBS",
+        "%USERPROFILE%\\Videos\\Medal",
+        "%USERPROFILE%\\Videos\\Overwolf",
+        "%USERPROFILE%\\Videos\\Outplayed",
+        "%USERPROFILE%\\Pictures\\Screenshots"
+      ],
+      "filePatterns": [
+        "*.mp4",
+        "*.mkv",
+        "*.avi",
+        "*.mov",
+        "*.wmv",
+        "*.webm",
+        "*.png",
+        "*.jpg",
+        "*.jpeg",
+        "*.bmp",
+        "*.gif"
+      ],
+      "recurse": true,
+      "minAgeDays": 90
+    },
+    {
+      "id": "media-game-replays",
+      "category": "录屏与截图",
+      "name": "游戏回放文件",
+      "description": "英雄联盟、VALORANT、火箭联盟、Apex 等游戏保存的回放文件，90 天前的移入回收站。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%USERPROFILE%\\Documents\\League of Legends\\Replays",
+        "%USERPROFILE%\\Documents\\My Games\\Rocket League\\TAGame\\Demos",
+        "%USERPROFILE%\\Documents\\Call of Duty\\players\\theatre",
+        "%USERPROFILE%\\Saved Games\\Respawn\\Apex\\assets\\temp",
+        "%LOCALAPPDATA%\\VALORANT\\Saved\\Logs"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 90
+    },
+    {
+      "id": "im-wechat-log",
+      "category": "国内软件",
+      "name": "微信日志",
+      "description": "微信的运行日志（实测约 109 MB）。不碰聊天记录、图片和接收到的文件。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%APPDATA%\\Tencent\\xwechat\\log"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "im-wechat-cache",
+      "category": "国内软件",
+      "name": "微信内置浏览器缓存",
+      "description": "微信内置 Chromium 的缓存与崩溃报告（实测约 2 MB）。刻意不动同级的 radium\\users —— 那里是聊天数据。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%APPDATA%\\Tencent\\xwechat\\radium\\cache",
+        "%APPDATA%\\Tencent\\xwechat\\radium\\crashpad"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "im-wechat-plugin",
+      "category": "国内软件",
+      "name": "微信小程序 / 视频号插件",
+      "description": "小程序与视频号的运行插件（实测约 700 MB）。删掉后微信会按需重新下载，首次打开小程序可能卡一下，所以归入需确认并移入回收站。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%APPDATA%\\Tencent\\xwechat\\XPlugin"
       ],
       "filePatterns": [
         "*"

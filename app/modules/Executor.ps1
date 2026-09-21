@@ -35,7 +35,10 @@ function Invoke-QdfClean {
 
         [string]$ReceiptDirectory = '',
 
-        [int]$MaxReceiptItems = 50000
+        # A receipt is for a human to review: 50k paths are unreviewable, and a
+        # receipt that large runs to tens of MB, which accumulates into GBs of
+        # receipts over time.
+        [int]$MaxReceiptItems = 2000
     )
 
     if ($SelectedRuleIds.Count -eq 0) {

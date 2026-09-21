@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>清道夫</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+
+    <header class="tabbar">
+        <div class="brand"><span data-i18n="appTitle">清道夫</span></div>
+        <nav class="tabs" role="tablist">
+            <button class="tab" role="tab" data-tab="clean"   data-i18n="tabClean">清理</button>
+            <button class="tab" role="tab" data-tab="analyze" data-i18n="tabAnalyze">分析</button>
+            <button class="tab" role="tab" data-tab="history" data-i18n="tabHistory">记录</button>
+        </nav>
+        <div class="tabbar-end"></div>
+    </header>
+
+    <main id="main">
+        <section class="tabpane" data-pane="clean">
+            <div class="pane-scroll" id="cleanScroll"></div>
+            <footer class="pane-footer" id="cleanFooter"></footer>
+        </section>
+
+        <section class="tabpane hidden" data-pane="analyze">
+            <div class="pane-scroll" id="analyzeScroll"></div>
+            <footer class="pane-footer" id="analyzeFooter"></footer>
+        </section>
+
+        <section class="tabpane hidden" data-pane="history">
+            <div class="pane-scroll" id="historyScroll"></div>
+            <footer class="pane-footer" id="historyFooter"></footer>
+        </section>
+    </main>
+
+    <div id="errorBanner" class="hidden">
+        <span class="err-mark" aria-hidden="true">!</span>
+        <span id="errorMessage"></span>
+        <button class="btn small ghost" id="errorDismiss" data-i18n="closeButton">关闭</button>
+    </div>
+
+</div>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

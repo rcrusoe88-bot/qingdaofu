@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "QingDaoFu",
+  "outputfilename": "QingDaoFu",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "info": {
+    "productName": "清道夫",
+    "productVersion": "1.0.0",
+    "comments": "Windows 安全空间清理工具"
+  },
+  "author": {
+    "name": "QingDaoFu contributors"
+  }
+}
