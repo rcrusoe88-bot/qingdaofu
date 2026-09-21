@@ -50,6 +50,9 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageR
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README-QINGDAO.md') -Destination (Join-Path $packageRoot 'README.md')
 
-Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $zipPath -CompressionLevel Optimal
+# Zip the folder itself rather than its contents, so extracting yields a single
+# 清道夫-Portable\ directory instead of scattering a dozen files into whatever
+# folder the user extracted into.
+Compress-Archive -Path $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
 
 Write-Output $zipPath
