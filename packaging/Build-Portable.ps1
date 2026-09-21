@@ -5,6 +5,8 @@ $outputRoot = Join-Path $projectRoot 'dist'
 $stageRoot = Join-Path $outputRoot 'stage'
 $productName = [string]([char]0x6E05) + [string]([char]0x9053) + [string]([char]0x592B)
 $launcherName = [string]([char]0x542F) + [string]([char]0x52A8) + $productName + '.cmd'
+# 使用前必读.txt - built from code points so this script stays ASCII-only
+$quickStartName = [string]([char]0x4F7F) + [string]([char]0x7528) + [string]([char]0x524D) + [string]([char]0x5FC5) + [string]([char]0x8BFB) + '.txt'
 $packageRoot = Join-Path $stageRoot ($productName + '-Portable')
 $zipPath = Join-Path $outputRoot ($productName + '-Portable.zip')
 
@@ -43,6 +45,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'app') -Destination $packageRoot 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'rules') -Destination $packageRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $projectRoot 'gui\build\bin\QingDaoFu.exe') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot $launcherName) -Destination $packageRoot
+Copy-Item -LiteralPath (Join-Path $projectRoot $quickStartName) -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README-QINGDAO.md') -Destination (Join-Path $packageRoot 'README.md')
