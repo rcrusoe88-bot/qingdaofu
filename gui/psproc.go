@@ -80,7 +80,14 @@ func (r *runner) run(command string, ruleIds []string, dryRun bool, onLine func(
 		// PowerShell's -File binding does not split arrays: "-RuleIds a b c"
 		// binds only "a" and spills b/c onto the script's positional
 		// parameters, which aborts the script before it runs. Pass one
-		// comma-joined argument; QdfCli.ps1 unfolds it again.
+		// comma-joined argument; QdfCli.ps1 unfolds it again. An id holding a
+		// comma would unfold into two ids that match no rule, leaving the
+		// cleaner reporting success for zero work — reject it up front.
+		for _, id := range ruleIds {
+			if strings.Contains(id, ",") {
+				return fmt.Errorf("规则 id 不能包含逗号：%q", id)
+			}
+		}
 		args = append(args, "-RuleIds", strings.Join(ruleIds, ","))
 	}
 	if dryRun {
