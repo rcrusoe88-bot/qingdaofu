@@ -16,7 +16,15 @@ jobs:
           go-version-file: go.mod
       - name: Install pinned test runner
         shell: powershell
-        run: Install-Module Pester -RequiredVersion 3.4.0 -Scope CurrentUser -Force -SkipPublisherCheck
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq [version]'3.4.0' })) {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Install-PackageProvider NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+            Install-Module Pester -RequiredVersion 3.4.0 -Scope CurrentUser -Force -SkipPublisherCheck -Confirm:$false
+          }
+          Import-Module Pester -RequiredVersion 3.4.0 -ErrorAction Stop
       - name: Test actual cleanup engine
         shell: powershell
         run: ./qdf-tests/Run-Tests.ps1
