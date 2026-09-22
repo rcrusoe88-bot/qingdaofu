@@ -228,6 +228,43 @@ function Get-CacheLikeChildren {
     return $hits
 }
 
+# An electron-updater download cache: directory named *-updater / *-update
+# whose entire content is installer executables. Verified 2026-09-22 on this
+# machine: 7 such directories, each holding exactly one installer.exe and no
+# subdirectories (roughly 1.5 GB of leftover installers in total).
+#
+# This closes an evidence gap: these directories contain no "cache" subdir, so
+# the cache-shape signal ignored them, but their content was verified by hand
+# to be nothing but regenerable installer payloads. The marker is evidence for
+# the human review step - a rule built on it still goes through the
+# careful/recycle review path, never straight to safe/delete.
+#
+# Both -updater and -update suffixes are accepted because the report's Dir
+# column truncated "dsh-plugin-desktop-updater" to "...-update" at 31 chars,
+# which misled manual analysis on 2026-09-22 (the column has since been
+# widened to 48).
+function Test-QdfUpdaterCache {
+    param([string]$Path)
+
+    try {
+        if (([System.IO.Path]::GetFileName($Path)) -notmatch '(-updater|-update)$') { return $false }
+    }
+    catch { return $false }
+
+    $entries = @()
+    try { $entries = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop) }
+    catch { return $false }
+
+    # An updater cache is a handful of files, never many, and never nested.
+    if ($entries.Count -eq 0 -or $entries.Count -gt 10) { return $false }
+
+    foreach ($e in $entries) {
+        if ($e.PSIsContainer) { return $false }
+        if ($e.Name -notmatch '\.exe$') { return $false }
+    }
+    return $true
+}
+
 # Shallow search for a validly signed binary. Last-resort attribution only:
 # signatures found inside a data dir often belong to a bundled runtime, so this
 # is used only when nothing else matched.
@@ -450,9 +487,11 @@ foreach ($base in $bases) {
         }
 
         $cacheLike = @(Get-CacheLikeChildren -Path $d.FullName)
+        if (Test-QdfUpdaterCache -Path $d.FullName) { $cacheLike += 'updaterCache' }
         $null = $dirRows.Add([pscustomobject]@{
             Dir = ($base.Tag + '\' + $d.Name)
             Bytes = $size.Bytes
+            Capped = $size.Capped
             Candidates = $cands
             CacheLike = ($cacheLike | Select-Object -Unique) -join ', '
         })
@@ -528,11 +567,22 @@ $null = $out.Add('=' * 110)
 $null = $out.Add($L.dirsHeading)
 $null = $out.Add('=' * 110)
 $null = $out.Add($L.dirsExplain)
+$null = $out.Add($L.sizeCappedNote)
+$null = $out.Add($L.updaterCacheNote)
 $null = $out.Add('')
-$null = $out.Add(("{0,-32} {1,10}  {2,-24} {3}" -f $L.colDir, $L.colSize, $L.colCacheLike, $L.colCandidates))
+$null = $out.Add(("{0,-49} {1,10}  {2,-24} {3}" -f $L.colDir, $L.colSize, $L.colCacheLike, $L.colCandidates))
 $null = $out.Add('-' * 110)
 foreach ($r in ($dirRows | Sort-Object -Property Bytes -Descending)) {
-    $dir = $r.Dir; if ($dir.Length -gt 31) { $dir = $dir.Substring(0, 31) }
+    # Widened from 31 to 48: long Electron identifiers were truncated in the
+    # middle of their suffix ("io.github.clash-verge-rev.clash-verge-rev",
+    # "@genieworkbuddy-desktop-updater"), which made manual verification fail
+    # - a Test-Path on the truncated name simply returns false.
+    $dir = $r.Dir; if ($dir.Length -gt 48) { $dir = $dir.Substring(0, 48) }
+    # Measure-Dir stops counting at MaxFilesPerDir, so a capped size is a lower
+    # bound, not the size. Without the marker this column read as fact: uv's
+    # cache showed 421.5 MB while it actually holds 4.33 GB.
+    $sizeText = Format-Size $r.Bytes
+    if ($r.Capped) { $sizeText = $sizeText + '+' }
     $cl = $r.CacheLike; if (-not $cl) { $cl = $L.noCacheLike }
     if ($cl.Length -gt 23) { $cl = $cl.Substring(0, 23) }
     $cands = $L.noCandidate
@@ -544,7 +594,7 @@ foreach ($r in ($dirRows | Sort-Object -Property Bytes -Descending)) {
         }
         $cands = $parts -join '  /  '
     }
-    $null = $out.Add(("{0,-32} {1,10}  {2,-24} {3}" -f $dir, (Format-Size $r.Bytes), $cl, $cands))
+    $null = $out.Add(("{0,-49} {1,10}  {2,-24} {3}" -f $dir, $sizeText, $cl, $cands))
 }
 
 $reportDir = Split-Path -Parent $Report

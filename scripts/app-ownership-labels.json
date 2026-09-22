@@ -35,6 +35,8 @@
 
   "dirsHeading": "C. 待归属的数据目录",
   "dirsExplain": "「候选归属」按匹配质量排序：精确 > 前缀 > 包含。来源标在方括号里。候选只是提示，需要人工确认后才进软件——机器分不清 Huorong 和火绒。",
+  "sizeCappedNote": "体积带 + 号表示文件数达到扫描上限（默认 2 万）：显示值是下限，实际体积更大。别拿带 + 的数字做决策——uv 缓存曾显示 421.5 MB，实测是 4.33 GB。",
+  "updaterCacheNote": "标记 updaterCache 的目录：名称以 -updater / -update 结尾且内容只有安装包 exe（无子目录），是 electron-updater 未清理的更新安装包。这是脚本级证据，规则仍需走 careful + 回收站评审，不能直接判 safe。",
   "colDir": "目录",
   "colSize": "体积",
   "colCacheLike": "已知缓存子目录",

@@ -2,6 +2,9 @@
 
 This guide provides AI coding assistants with essential commands, patterns, and conventions for working in the Mole codebase.
 
+> **Windows / 清道夫 注意**：本文件继承自上游 macOS 版 Mole，`safe_*` 辅助函数、BATS 测试和 `./scripts/*.sh` 在清道夫上**都不存在**（清道夫是 PowerShell 项目，测试用 Pester：`qdf-tests\Run-Tests.ps1`）。
+> 涉及**新增或修改清理规则**时，以 `CONTRIBUTING.md` 的《新增清理规则（Windows）》一节为准 —— 那里定义了红线、证据要求、通配与非缓存目录的破例条款、以及提交前自检清单。
+
 **Quick reference**: Build/test commands • Safety rules • Architecture map • Code style
 
 ---
