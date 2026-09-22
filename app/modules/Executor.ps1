@@ -1,180 +1,141 @@
 function Move-QdfFileToRecycleBin {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
+    param([Parameter(Mandatory = $true)][string]$Path)
     Add-Type -AssemblyName Microsoft.VisualBasic
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
         $Path,
         [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
         [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin,
-        [Microsoft.VisualBasic.FileIO.UICancelOption]::DoNothing
+        [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException
     )
+    if ([System.IO.File]::Exists($Path)) { throw 'The recycle operation did not remove the candidate.' }
 }
 
 function Remove-QdfCandidateFile {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
+    param([string]$Path, [long]$Size, [datetime]$LastWriteTimeUtc)
+    [QdfPathLease]::DeleteVerified($Path, $Size, $LastWriteTimeUtc.ToFileTimeUtc())
+}
 
-    [System.IO.File]::Delete($Path)
+function Write-QdfJournalEvent {
+    param([string]$Path, [object]$Event)
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes(($Event | ConvertTo-Json -Depth 8 -Compress) + [Environment]::NewLine)
+    $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+    try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+    finally { $stream.Dispose() }
+}
+
+function Save-QdfReceipt {
+    param([string]$Path, [object]$Receipt)
+    $temporary = $Path + '.tmp'
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes(($Receipt | ConvertTo-Json -Depth 8))
+    $stream = New-Object System.IO.FileStream($temporary, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush($true) }
+    finally { $stream.Dispose() }
+    if ([System.IO.File]::Exists($Path)) { [System.IO.File]::Replace($temporary, $Path, [NullString]::Value) }
+    else { [System.IO.File]::Move($temporary, $Path) }
 }
 
 function Invoke-QdfClean {
     param(
         [string]$RulesPath = $script:QdfRulesPath,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$SelectedRuleIds,
-
+        [Parameter(Mandatory = $true)][string[]]$SelectedRuleIds,
         [switch]$DryRun,
-
         [switch]$SkipOperationLog,
-
         [string]$ReceiptDirectory = '',
-
-        # A receipt is for a human to review: 50k paths are unreviewable, and a
-        # receipt that large runs to tens of MB, which accumulates into GBs of
-        # receipts over time.
-        [int]$MaxReceiptItems = 2000
+        [int]$MaxReceiptItems = 2000,
+        [string]$CancelPath = ''
     )
-
-    if ($SelectedRuleIds.Count -eq 0) {
-        throw 'No cleanup rules were selected.'
-    }
-
-    if ([string]::IsNullOrWhiteSpace($ReceiptDirectory)) {
-        $ReceiptDirectory = Join-Path $script:QdfDataRoot 'receipts'
-    }
-
-    $scan = Invoke-QdfScan `
-        -RulesPath $RulesPath `
-        -RuleIds $SelectedRuleIds `
-        -MaxDetailsPerCategory -1 `
-        -SkipLargeFiles
+    if ($SelectedRuleIds.Count -eq 0) { throw 'No cleanup rules were selected.' }
     $ruleset = Read-QdfJsonFile -Path $RulesPath
-    $rules = @(Get-QdfPropertyValue -Object $ruleset -Name 'rules' -DefaultValue @())
-
-    $startedAt = [datetime]::UtcNow
-    $results = New-Object System.Collections.Generic.List[object]
-    $receiptItems = New-Object System.Collections.Generic.List[object]
-    $successfulCount = 0
-    $failedCount = 0
-    $skippedCount = 0
-    $bytesFreed = 0L
-    $bytesRecycled = 0L
-
-    foreach ($category in @($scan.Categories)) {
-        $rule = Get-QdfRuleById -Rules $rules -RuleId $category.Id
-        if ($null -eq $rule) {
-            continue
-        }
-
-        $ruleRoots = @(Resolve-QdfRuleRoots -Rule $rule)
-        $normalizedRuleRoots = @(
-            foreach ($root in $ruleRoots) {
-                Get-QdfNormalizedPath -Path $root.FullName
-            }
-        )
-        foreach ($file in @($category.Files)) {
-            $candidatePath = [string](Get-QdfPropertyValue -Object $file -Name 'Path' -DefaultValue '')
-            $candidateSize = [long](Get-QdfPropertyValue -Object $file -Name 'Size' -DefaultValue 0)
-
-            if ([string]::IsNullOrWhiteSpace($candidatePath) -or -not [System.IO.File]::Exists($candidatePath)) {
-                $skippedCount++
-                continue
-            }
-
-            try {
-                $attributes = [System.IO.File]::GetAttributes($candidatePath)
-            }
-            catch {
-                $skippedCount++
-                continue
-            }
-
-            if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-                $skippedCount++
-                continue
-            }
-
-            if (-not (Test-QdfCandidatePath -Path $candidatePath -Rule $rule -NormalizedRoots $normalizedRuleRoots -PathIsNormalized)) {
-                $skippedCount++
-                continue
-            }
-
-            if ($receiptItems.Count -lt $MaxReceiptItems) {
-                $receiptItems.Add([pscustomobject]@{
-                    RuleId = $category.Id
-                    Path = $candidatePath
-                    Size = $candidateSize
-                    Action = $category.Action
-                    PlannedAt = [datetime]::UtcNow.ToString('o')
-                    DryRun = [bool]$DryRun
-                })
-            }
-
-            if ($DryRun) {
-                $successfulCount++
-                continue
-            }
-
-            try {
-                if ($category.Action -eq 'recycle') {
-                    Move-QdfFileToRecycleBin -Path $candidatePath
-                    $bytesRecycled += $candidateSize
-                }
-                else {
-                    Remove-QdfCandidateFile -Path $candidatePath
-                    $bytesFreed += $candidateSize
-                }
-
-                $successfulCount++
-            }
-            catch {
-                $failedCount++
-                $results.Add([pscustomobject]@{
-                    RuleId = $category.Id
-                    Path = $candidatePath
-                    Action = $category.Action
-                    Success = $false
-                    Reason = $_.Exception.Message
-                })
-            }
+    Test-QdfRuleset -Ruleset $ruleset
+    $rules = @($ruleset.rules)
+    foreach ($id in $SelectedRuleIds) {
+        $rule = Get-QdfRuleById -Rules $rules -RuleId $id
+        if ($null -eq $rule -or $rule.kind -ne 'cleanup' -or (Get-QdfPropertyValue $rule 'enabled' $true) -eq $false) {
+            throw "Unknown or disabled cleanup rule: $id"
         }
     }
-
-    $completedAt = [datetime]::UtcNow
+    if ([string]::IsNullOrWhiteSpace($ReceiptDirectory)) { $ReceiptDirectory = Join-Path $script:QdfDataRoot 'receipts' }
+    if (-not (Test-Path -LiteralPath $ReceiptDirectory)) { New-Item -ItemType Directory -Path $ReceiptDirectory -Force | Out-Null }
+    $receiptPath = Join-Path $ReceiptDirectory ('receipt-' + [guid]::NewGuid().ToString('N') + '.json')
+    $journalPath = $receiptPath + '.jsonl'
     $summary = [pscustomobject]@{
-        StartedAt = $startedAt.ToString('o')
-        CompletedAt = $completedAt.ToString('o')
-        DryRun = [bool]$DryRun
-        SelectedRuleIds = @($SelectedRuleIds)
-        ScannedCandidateCount = [int](($scan.Categories | Measure-Object -Property ItemCount -Sum).Sum)
-        ProcessedCount = $successfulCount
-        SuccessfulCount = $successfulCount
-        FailedCount = $failedCount
-        SkippedCount = $skippedCount
-        BytesFreed = $bytesFreed
-        BytesFreedText = Format-QdfSize -Bytes $bytesFreed
-        BytesRecycled = $bytesRecycled
-        BytesRecycledText = Format-QdfSize -Bytes $bytesRecycled
-        Failures = $results.ToArray()
-        ReceiptPath = ''
+        StartedAt = [datetime]::UtcNow.ToString('o'); CompletedAt = ''; State = 'Incomplete'
+        DryRun = [bool]$DryRun; SelectedRuleIds = @($SelectedRuleIds)
+        ScannedCandidateCount = 0; ProcessedCount = 0; SuccessfulCount = 0; FailedCount = 0; SkippedCount = 0
+        BytesFreed = 0L; BytesFreedText = '0 B'; BytesRecycled = 0L; BytesRecycledText = '0 B'
+        Failures = @(); ReceiptPath = $receiptPath; Error = ''; JournalIncomplete = $false
     }
-
-    $receiptObject = [pscustomobject]@{
-        Summary = $summary
-        Items = $receiptItems.ToArray()
-        ReceiptTruncated = ($receiptItems.Count -ge $MaxReceiptItems)
+    $receiptItems = New-Object System.Collections.Generic.List[object]
+    $receipt = [pscustomobject]@{ Summary = $summary; Items = @(); ReceiptTruncated = $false }
+    # A durable initial receipt must exist before any deletion, even if logging is unavailable.
+    Save-QdfReceipt -Path $receiptPath -Receipt $receipt
+    Write-QdfJournalEvent $journalPath @{ Type = 'started'; At = $summary.StartedAt }
+    $seen = @{}
+    try {
+        $scan = Invoke-QdfScan -RulesPath $RulesPath -RuleIds $SelectedRuleIds -MaxDetailsPerCategory -1 -SkipLargeFiles
+        $summary.ScannedCandidateCount = [int](($scan.Categories | Measure-Object -Property ItemCount -Sum).Sum)
+        :categories foreach ($category in @($scan.Categories)) {
+            $rule = Get-QdfRuleById -Rules $rules -RuleId $category.Id
+            $roots = @(Resolve-QdfRuleRoots -Rule $rule | ForEach-Object { Get-QdfNormalizedPath $_.FullName })
+            foreach ($file in @($category.Files)) {
+                if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break categories }
+                $candidatePath = [string]$file.Path
+                if ($seen.ContainsKey($candidatePath)) { continue }
+                $seen[$candidatePath] = $true
+                $entry = [pscustomobject]@{
+                    Type = 'planned'; RuleId = $category.Id; Path = $candidatePath; Size = [long]$file.Size
+                    Action = $category.Action; DryRun = [bool]$DryRun; Status = 'Unknown'; Reason = ''
+                }
+                # A crash between planned and outcome means UNKNOWN, never an assumed success.
+                Write-QdfJournalEvent $journalPath $entry
+                $lease = $null
+                try {
+                    $lease = New-Object QdfPathLease($candidatePath)
+                    if (-not (Test-QdfCandidatePath -Path $candidatePath -Rule $rule -NormalizedRoots $roots)) { throw 'Candidate is outside the safe rule boundary.' }
+                    $current = Get-Item -LiteralPath $candidatePath -Force -ErrorAction Stop
+                    $expectedTime = [datetime]::Parse($file.LastWriteTimeUtc).ToUniversalTime()
+                    if ($current.PSIsContainer -or $current.Length -ne $file.Size -or $current.LastWriteTimeUtc -ne $expectedTime) { throw 'Candidate changed after scanning.' }
+                    if ($DryRun) { $entry.Status = 'DryRun' }
+                    elseif ($category.Action -eq 'recycle') {
+                        Move-QdfFileToRecycleBin -Path $candidatePath
+                        $entry.Status = 'Recycled'; $summary.BytesRecycled += $file.Size
+                    }
+                    else {
+                        Remove-QdfCandidateFile -Path $candidatePath -Size $file.Size -LastWriteTimeUtc $expectedTime
+                        $entry.Status = 'Deleted'; $summary.BytesFreed += $file.Size
+                    }
+                    $summary.SuccessfulCount++
+                }
+                catch {
+                    $entry.Status = 'Failed'; $entry.Reason = $_.Exception.Message; $summary.FailedCount++
+                    if ($summary.Failures.Count -lt $MaxReceiptItems) { $summary.Failures += $entry.PSObject.Copy() }
+                }
+                finally { if ($null -ne $lease) { $lease.Dispose() } }
+                $entry.Type = 'outcome'
+                # Journal failure aborts all subsequent deletions.
+                try { Write-QdfJournalEvent $journalPath $entry }
+                catch { $summary.JournalIncomplete = $true; throw }
+                if ($receiptItems.Count -lt $MaxReceiptItems) { $receiptItems.Add($entry) }
+                else { $receipt.ReceiptTruncated = $true }
+            }
+        }
+        if ($summary.State -ne 'Cancelled') {
+            $summary.State = if ($summary.FailedCount -gt 0) { 'Partial' } else { 'Completed' }
+        }
     }
-    $summary.ReceiptPath = New-QdfReceipt -Result $receiptObject -ReceiptDirectory $ReceiptDirectory
-
+    catch { $summary.State = 'Failed'; $summary.Error = $_.Exception.Message }
+    finally {
+        $summary.CompletedAt = [datetime]::UtcNow.ToString('o')
+        $summary.ProcessedCount = $summary.SuccessfulCount
+        $summary.BytesFreedText = Format-QdfSize $summary.BytesFreed
+        $summary.BytesRecycledText = Format-QdfSize $summary.BytesRecycled
+        $receipt.Items = $receiptItems.ToArray()
+        Save-QdfReceipt -Path $receiptPath -Receipt $receipt
+    }
+    # Receipts are the source of truth; a secondary log failure cannot erase the result.
     if (-not $DryRun -and -not $SkipOperationLog) {
-        Write-QdfOperationLog -Summary $summary
+        try { Write-QdfOperationLog -Summary $summary }
+        catch { $summary.Error = 'Operation log unavailable: ' + $_.Exception.Message; Save-QdfReceipt $receiptPath $receipt }
     }
-
     return $summary
 }

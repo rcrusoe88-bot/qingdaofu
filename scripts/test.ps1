@@ -45,6 +45,7 @@ if (-not $NoPester) {
     $config = New-PesterConfiguration
     $config.Run.Path = $testsDir
     $config.Run.Exit = $false
+    $config.Run.PassThru = $true
     $config.Output.Verbosity = if ($Verbose) { "Detailed" } else { "Normal" }
     
     if ($Coverage) {
@@ -64,24 +65,11 @@ if (-not $NoPester) {
     
     # Pester already printed results above, just check for failures
     # Different Pester versions use different result properties
-    $failed = 0
-    try {
-        if ($null -ne $result.FailedCount) {
-            $failed = $result.FailedCount
-        }
-        elseif ($null -ne $result.Failed) {
-            $failed = $result.Failed.Count
-        }
-        elseif ($null -ne $result.Result -and $null -ne $result.Result.FailedCount) {
-            $failed = $result.Result.FailedCount
-        }
+    if ($null -eq $result -or $null -eq $result.FailedCount -or $result.TotalCount -eq 0) {
+        throw 'Pester did not return a valid non-empty test result.'
     }
-    catch {
-        # If we can't read the result object, assume tests passed
-        # (Pester itself prints results and would have exited with error if tests failed)
-        Write-Host "  Note: Could not parse result object, checking exit behavior" -ForegroundColor Gray
-    }
-    
+    $failed = $result.FailedCount
+
     if ($failed -gt 0) {
         Write-Host "  $failed test(s) failed!" -ForegroundColor Red
         $script:ExitCode = 1

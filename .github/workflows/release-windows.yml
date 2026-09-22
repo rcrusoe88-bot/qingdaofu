@@ -1,176 +1,63 @@
-name: Build Windows Prerelease
-
+name: Build QingDaoFu Portable
 on:
   push:
-    tags:
-      - 'v*.*.*-windows'  # Windows-specific releases
-      - 'V*.*.*-windows'  # Windows-specific releases (uppercase)
-  workflow_dispatch:  # Allow manual trigger
-    inputs:
-      version:
-        description: 'Version to release (e.g., 1.0.0)'
-        required: true
-        type: string
-
+    tags: ['v*.*.*']
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
-  contents: write  # Required for creating releases
-
+  contents: read
 jobs:
-  build-windows:
-    name: Build Windows Prerelease Artifacts
+  portable:
     runs-on: windows-latest
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          fetch-depth: 0
-      
-      - name: Setup Go
-        uses: actions/setup-go@v7
+          go-version-file: go.mod
+      - name: Install pinned tools
+        shell: powershell
+        run: |
+          Install-Module Pester -RequiredVersion 3.4.0 -Scope CurrentUser -Force -SkipPublisherCheck
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test backends and frontend
+        shell: pwsh
+        run: |
+          go test -mod=readonly ./gui ./cmd/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test qdf-tests/frontend.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build, test and verify portable package
+        shell: powershell
+        run: ./scripts/build-portable.ps1
+      - uses: actions/upload-artifact@v7
         with:
-          go-version: '1.25.0'
-      
-      - name: Setup PowerShell
-        shell: pwsh
-        run: |
-          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
-          Write-Host "Go Version: $(go version)"
-      
-      - name: Extract version
-        id: version
-        shell: pwsh
-        run: |
-          if ("${{ github.event.inputs.version }}" -ne "") {
-            $version = "${{ github.event.inputs.version }}"
-          } elseif ("${{ github.ref }}" -like "refs/tags/*") {
-            $version = "${{ github.ref }}" -replace '^refs/tags/[Vv]', ''
-            $version = $version -replace '-windows$', ''
-          } else {
-            $version = (Get-Content VERSION -Raw).Trim()
-          }
-          if (-not $version) {
-            Write-Error "Could not detect version"
-            exit 1
-          }
-          Write-Host "Version: $version"
-          "VERSION=$version" >> $env:GITHUB_OUTPUT
-      
-      - name: Run tests
-        shell: pwsh
-        run: |
-          if (Test-Path "scripts\test.ps1") {
-            & scripts\test.ps1
-          } else {
-            Write-Host "No test script found, skipping tests"
-          }
-      
-
-      - name: Install PS2EXE
-        shell: pwsh
-        run: |
-          Write-Host "Installing PS2EXE module..."
-          Install-Module -Name ps2exe -Force -Scope CurrentUser -SkipPublisherCheck
-      
-      - name: Build release artifacts (ZIP)
-        shell: pwsh
-        run: |
-          & scripts\build-release.ps1 -Version ${{ steps.version.outputs.VERSION }}
-
-      - name: Prepare raw TUI binary assets
-        shell: pwsh
-        run: |
-          Copy-Item "bin\analyze.exe" "release\analyze-windows-x64.exe" -Force
-          Copy-Item "bin\status.exe" "release\status-windows-x64.exe" -Force
-      
-
-      - name: Build standalone EXE
-        shell: pwsh
-        run: |
-          & scripts\build-exe.ps1 -Version ${{ steps.version.outputs.VERSION }}
-        continue-on-error: true
-      
-      - name: List release artifacts
-        shell: pwsh
-        run: |
-          Write-Host "Release artifacts:"
-          Get-ChildItem release\ | ForEach-Object {
-            $size = if ($_.PSIsContainer) { "-" } else { "$([math]::Round($_.Length / 1MB, 2)) MB" }
-            Write-Host "  $($_.Name) - $size"
-          }
-      
-      - name: Upload ZIP artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: mole-${{ steps.version.outputs.VERSION }}-x64-zip
-          path: release/mole-${{ steps.version.outputs.VERSION }}-x64.zip
-          if-no-files-found: error
-      
-
-      - name: Upload EXE artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: mole-${{ steps.version.outputs.VERSION }}-x64-exe
-          path: release/mole-${{ steps.version.outputs.VERSION }}-x64.exe
-          if-no-files-found: ignore
-      
-      - name: Upload checksums
-        uses: actions/upload-artifact@v7
-        with:
-          name: checksums
-          path: release/SHA256SUMS.txt
-          if-no-files-found: error
-
-      - name: Upload TUI binaries
-        uses: actions/upload-artifact@v7
-        with:
-          name: tui-binaries
+          name: QingDaoFu-Portable
           path: |
-            release/analyze-windows-x64.exe
-            release/status-windows-x64.exe
+            release/**/qingdaofu-*-x64.zip
+            release/**/SHA256SUMS.txt
           if-no-files-found: error
-
-      - name: Collect release files
-        id: release_files
-        shell: pwsh
-        run: |
-          $files = @(
-            "release/mole-${{ steps.version.outputs.VERSION }}-x64.zip",
-            "release/analyze-windows-x64.exe",
-            "release/status-windows-x64.exe",
-            "release/SHA256SUMS.txt"
-          )
-          $optionalExe = "release/mole-${{ steps.version.outputs.VERSION }}-x64.exe"
-          if (Test-Path $optionalExe) {
-            $files += $optionalExe
-          }
-          "files<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          $files | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-      
-      - name: Create GitHub Prerelease
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: portable
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          files: ${{ steps.release_files.outputs.files }}
-          draft: false
-          prerelease: true
-          generate_release_notes: true
-          body: |
-            ## Windows System Maintenance Toolkit (Prerelease)
-            
-            **Download:** `mole-${{ steps.version.outputs.VERSION }}-x64.zip` (portable) or `.exe` (launcher)
-            **TUI assets:** `analyze-windows-x64.exe` and `status-windows-x64.exe`
-            
-            **Install:**
-            ```powershell
-            Expand-Archive mole-${{ steps.version.outputs.VERSION }}-x64.zip -DestinationPath C:\mole
-            cd C:\mole
-            .\install.ps1
-            ```
-
-            These assets are prerelease-only and do not affect the macOS stable release channel.
-
-            **Verify:** Check SHA256SUMS.txt for file integrity.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: QingDaoFu-Portable
+          path: portable
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            portable/**/*.zip
+            portable/**/SHA256SUMS.txt
+          body_path: RELEASE.md
+          fail_on_unmatched_files: true
+          draft: true
+          prerelease: false
+          generate_release_notes: false

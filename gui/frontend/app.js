@@ -18,6 +18,19 @@ let historyRows = null;
 let receiptOpen = null;       // 当前展开的回执路径
 let ruleNames = {};           // 规则 id → 中文名（历史与回执里只有 id）
 
+function operationState(state) {
+    return ({ Completed: '已完成', Partial: '部分失败', Cancelled: '已停止（部分完成）', Incomplete: '未完成，部分结果可能未知', Failed: '执行失败' })[state] || state || '已完成';
+}
+
+function onTaskError(e) {
+    showError(e && e.message ? e.message : String(e));
+    if (scanState === 'scanning' || scanState === 'cleaning') {
+        // Never reuse a snapshot after a potentially partial cleanup.
+        scanState = 'idle'; scanResult = null; selected = new Set(); historyRows = null;
+        renderClean();
+    }
+}
+
 const $ = (id) => document.getElementById(id);
 const arr = (x) => (Array.isArray(x) ? x : []);
 
@@ -323,7 +336,7 @@ function renderCleanFooter() {
             <button class="btn ghost" data-action="rescan">${esc(T.refreshButton || '')}</button>
             <button class="btn primary" data-action="clean" ${n ? '' : 'disabled'}>${esc(T.cleanCta || '')} ${n} ${esc(T.itemSuffix || '')}</button>`;
     } else if (scanState === 'cleaning') {
-        f.innerHTML = `<div class="footer-summary"><span class="footer-lead">${esc(T.statusCleaning || '')}</span></div>`;
+        f.innerHTML = `<div class="footer-summary"><span class="footer-lead">${esc(T.statusCleaning || '')}</span></div><button class="btn ghost" data-action="cancel">停止并保存回执</button>`;
     } else {
         const r = cleanResult || {};
         const failed = Number(r.FailedCount) || 0;
@@ -389,9 +402,9 @@ async function renderHistory() {
 
     const list = rows.length
         ? rows.map((h, i) => `<div class="hrow" data-action="open-receipt" data-idx="${i}">
-            <span class="when">${esc(fmtWhen(h.CompletedAt))}</span>
+            <span class="when">${esc(fmtWhen(h.CompletedAt || h.StartedAt))}</span>
             <span class="freed">${esc(h.BytesFreedText || '0 B')}</span>
-            <span class="rules">${esc(arr(h.SelectedRuleIds).map(ruleLabel).join('、'))}</span>
+            <span class="rules">${esc(operationState(h.State))} · ${esc(arr(h.SelectedRuleIds).map(ruleLabel).join('、'))}</span>
             ${Number(h.FailedCount) > 0 ? `<span class="failed">${esc(T.summaryFailed || '')} ${Number(h.FailedCount)}</span>` : ''}
         </div>`).join('')
         : `<div class="card empty"><div class="empty-title">${esc(T.noItems || '')}</div></div>`;
@@ -409,7 +422,7 @@ async function renderHistory() {
         <button class="btn ghost" data-action="open-recyclebin">${esc(T.openRecycleBin || '')}</button>
         <button class="btn ghost" data-action="open-logs">${esc(T.logsButton || '')}</button>`;
 
-    if (receiptOpen) await renderReceipt(receiptOpen);
+    if (receiptOpen !== null) await renderReceipt(receiptOpen);
 }
 
 async function renderReceipt(idx) {
@@ -425,12 +438,17 @@ async function renderReceipt(idx) {
         const s = r.Summary || {};
         const failures = arr(s.Failures);
         const kv = [
+            ['操作状态', operationState(s.State), s.State && s.State !== 'Completed'],
+            ['结果未知', String(s.UnknownCount || 0), Number(s.UnknownCount) > 0],
             [T.summaryProcessed, String(s.SuccessfulCount || 0), false],
             [T.summaryRecycled, s.BytesRecycledText || '0 B', false],
             [T.summaryFailed, String(s.FailedCount || 0), Number(s.FailedCount) > 0],
         ];
         detail = `<div class="kv">${kv.map(([k, v, d]) =>
             `<div><dt>${esc(k)}</dt><dd class="${d ? 'danger' : ''}">${esc(v)}</dd></div>`).join('')}</div>`;
+        if (s.Error) detail += '<div class="footer-note">' + esc(s.Error) + '</div>';
+        detail += arr(r.Items).slice(0, 200).map((item) => '<div class="fail-row"><span class="p">' + esc(item.Path) + '</span><span class="why">' + esc(({Deleted:'已删除',Recycled:'已移入回收站',Failed:'未完成',Unknown:'结果未知',DryRun:'仅预览'})[item.Status] || item.Status || '旧版候选记录') + '</span></div>').join('');
+        if (r.ReceiptTruncated || arr(r.Items).length > 200) detail += '<div class="footer-note">界面仅展示部分明细，完整逐项记录保存在同名 .jsonl 文件中。</div>';
         if (failures.length) {
             detail += `<div class="footer-note">${esc(T.summaryFailed || '')}（${failures.length}）</div>` +
                 failures.slice(0, 30).map((f) => `<div class="fail-row">
@@ -446,7 +464,7 @@ async function renderReceipt(idx) {
     box.innerHTML = `<div class="card receipt">
         <div class="group-head">
             <span class="group-title">${esc(T.receiptPath || '')}</span>
-            <span class="group-meta">${esc(fmtWhen(h.CompletedAt))} · ${esc(h.BytesFreedText || '0 B')}</span>
+            <span class="group-meta">${esc(fmtWhen(h.CompletedAt || h.StartedAt))} · ${esc(h.BytesFreedText || '0 B')}</span>
             <span class="group-tools"><button class="btn small ghost" data-action="close-receipt">${esc(T.closeButton || '')}</button></span>
         </div>
         <div style="padding:14px 18px">
@@ -459,6 +477,7 @@ async function renderReceipt(idx) {
 /* ---------------- 动作 ---------------- */
 
 async function startScan() {
+    if (scanState === 'scanning' || scanState === 'cleaning') return;
     scanState = 'scanning';
     scanSeen = [];
     selected = new Set();
@@ -497,6 +516,7 @@ function onScanDone(result) {
 }
 
 async function startClean() {
+    if (scanState !== 'review') return;
     if (!selected.size) return;
     const cats = selectedLive();
     const delBytes = cats.filter((c) => c.Action === 'delete').reduce((s, c) => s + (Number(c.TotalSize) || 0), 0);
@@ -530,6 +550,7 @@ function onCleanDone(result) {
         return;
     }
     cleanResult = result;
+    if (result.State && result.State !== 'Completed') showError(operationState(result.State) + (result.Error ? '：' + result.Error : '；请查看记录页。'));
     scanState = 'done';
     scanResult = null;            // 扫过的内容已经被处理，旧结果不再可信
     selected = new Set();
@@ -552,7 +573,7 @@ function toggleDetail(ruleEl) {
 const ACTIONS = {
     scan: () => startScan(),
     rescan: () => { historyRows = null; startScan(); },
-    cancel: async () => { await QDF.cancel(); scanState = 'idle'; renderClean(); },
+    cancel: async () => { try { await QDF.cancel(); showError('正在停止，请等待当前文件处理及回执保存完成。'); } catch (e) { showError(String(e)); } },
     clean: () => startClean(),
     'group-all': (el) => setGroup(el.dataset.group, true),
     'group-none': (el) => setGroup(el.dataset.group, false),
@@ -629,7 +650,9 @@ function applyStrings() {
     QDF.on('scan:done', onScanDone);
     QDF.on('clean:progress', () => {});
     QDF.on('clean:done', onCleanDone);
-    QDF.on('app:error', (e) => showError(e && e.message ? e.message : String(e)));
+    QDF.on('app:error', onTaskError);
+    QDF.on('app:stopping', (message) => showError(message));
+    QDF.on('app:cancelled', () => { scanState = 'idle'; scanResult = null; selected = new Set(); renderClean(); });
 
     showTab('clean');
 })();

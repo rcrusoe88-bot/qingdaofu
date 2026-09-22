@@ -1,14 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -29,8 +31,6 @@ type App struct {
 	ctx  context.Context
 	root string // portable root: directory containing app/ and rules/
 	ps   *runner
-
-	mu sync.Mutex // serializes Scan/Clean launches
 }
 
 func NewApp() *App { return &App{} }
@@ -42,7 +42,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
-	a.ps.kill()
+	_ = a.ps.stop()
 }
 
 // findRoot locates the directory containing app/ and rules/.
@@ -69,7 +69,7 @@ func (a *App) cliPath() (string, error) {
 // result are streamed to the frontend via events scan:progress /
 // scan:done / app:error.
 func (a *App) Scan(ruleIds []string) error {
-	if err := a.launch(); err != nil {
+	if err := a.launch("scan"); err != nil {
 		return err
 	}
 	go a.runStream("scan", ruleIds, false)
@@ -80,89 +80,101 @@ func (a *App) Scan(ruleIds []string) error {
 // lives in rules.json; the GUI never passes an action. Streams
 // clean:progress / clean:done / app:error.
 func (a *App) Clean(ruleIds []string) error {
-	if err := a.launch(); err != nil {
+	if err := a.launch("clean"); err != nil {
 		return err
 	}
 	go a.runStream("clean", ruleIds, false)
 	return nil
 }
 
-func (a *App) launch() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.ps.busy() {
-		return fmt.Errorf("已有任务正在运行，请稍候")
-	}
+func (a *App) launch(command string) error {
 	if _, err := a.cliPath(); err != nil {
 		return err
 	}
-	return nil
+	return a.ps.reserve(command)
 }
 
-// runStream spawns QdfCli.ps1, parses NDJSON lines and emits Wails events.
-func (a *App) runStream(command string, ruleIds []string, dryRun bool) {
-	prefix := command + ":"
-	err := a.ps.run(command, ruleIds, dryRun, func(line []byte) {
+func (a *App) beforeClose(ctx context.Context) bool {
+	if a.ps == nil || !a.ps.busy() {
+		return false
+	}
+	if err := a.ps.stop(); err != nil {
+		log.Printf("stop: %v", err)
+	}
+	runtime.EventsEmit(a.ctx, "app:stopping", "正在停止任务并保存回执，请稍后再关闭窗口。")
+	return true
+}
+
+func (a *App) runStream(command string, ids []string, dryRun bool) {
+	var result map[string]interface{}
+	var coreError string
+	err := a.ps.runReserved(command, ids, dryRun, func(line []byte) {
 		var ev psEvent
 		if json.Unmarshal(line, &ev) != nil {
 			return
 		}
 		switch ev.Type {
 		case "progress":
-			runtime.EventsEmit(a.ctx, prefix+"progress", ev)
+			runtime.EventsEmit(a.ctx, command+":progress", ev)
 		case "result":
-			var raw map[string]interface{}
-			if json.Unmarshal(line, &raw) == nil {
-				runtime.EventsEmit(a.ctx, prefix+"done", raw)
+			if e := json.Unmarshal(line, &result); e != nil {
+				coreError = e.Error()
 			}
 		case "error":
-			runtime.EventsEmit(a.ctx, "app:error", map[string]string{"message": ev.Message})
+			coreError = ev.Message
 		}
 	})
-	if err != nil && !a.ps.wasKilled() {
-		log.Printf("%s failed: %v", command, err)
-		runtime.EventsEmit(a.ctx, "app:error", map[string]string{"message": err.Error()})
+	if errors.Is(err, errKilled) {
+		runtime.EventsEmit(a.ctx, "app:cancelled", command)
+		return
 	}
+	if err != nil || coreError != "" || result == nil {
+		message := coreError
+		if message == "" && err != nil {
+			message = err.Error()
+		}
+		if message == "" {
+			message = "核心组件退出但没有返回结果；请检查操作记录。"
+		}
+		runtime.EventsEmit(a.ctx, "app:error", map[string]string{"message": message, "phase": command})
+		return
+	}
+	runtime.EventsEmit(a.ctx, command+":done", result)
 }
 
-// Cancel kills the running PowerShell process, if any.
-func (a *App) Cancel() error {
-	a.ps.kill()
-	return nil
-}
+func (a *App) Cancel() error { return a.ps.stop() }
 
 // GetHistory reads the last n entries of %LOCALAPPDATA%\QingDaoFu\logs\operations.jsonl
 // (newest first) directly from Go — reading a log needs no PS.
 func (a *App) GetHistory(last int) ([]map[string]interface{}, error) {
+	if a.ps != nil && a.ps.busy() {
+		return nil, fmt.Errorf("任务执行中，请在完成或停止后查看记录")
+	}
 	if last <= 0 || last > 200 {
 		last = 50
 	}
-	logPath := filepath.Join(dataRoot(), "logs", "operations.jsonl")
-	raw, err := os.ReadFile(logPath)
+	files, err := filepath.Glob(filepath.Join(dataRoot(), "receipts", "receipt-*.json"))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []map[string]interface{}{}, nil
-		}
 		return nil, err
 	}
-
-	var entries []map[string]interface{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimRight(line, "\r")
-		if strings.TrimSpace(line) == "" {
+	entries := []map[string]interface{}{}
+	for _, file := range files {
+		receipt, err := a.GetReceipt(file)
+		if err != nil {
+			log.Printf("Unreadable receipt %s: %v", filepath.Base(file), err)
 			continue
 		}
-		var m map[string]interface{}
-		if json.Unmarshal([]byte(line), &m) == nil {
-			entries = append(entries, m)
+		if summary, ok := receipt["Summary"].(map[string]interface{}); ok {
+			if dry, _ := summary["DryRun"].(bool); dry {
+				continue
+			}
+			summary["ReceiptPath"] = file
+			entries = append(entries, summary)
 		}
 	}
+	sort.Slice(entries, func(i, j int) bool { return fmt.Sprint(entries[i]["StartedAt"]) > fmt.Sprint(entries[j]["StartedAt"]) })
 	if len(entries) > last {
-		entries = entries[len(entries)-last:]
-	}
-	// newest first
-	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
-		entries[i], entries[j] = entries[j], entries[i]
+		entries = entries[:last]
 	}
 	return entries, nil
 }
@@ -175,12 +187,18 @@ func (a *App) GetReceipt(path string) (map[string]interface{}, error) {
 	clean := filepath.Clean(path)
 	if !strings.EqualFold(clean, receiptsDir) &&
 		strings.HasPrefix(strings.ToLower(clean), strings.ToLower(receiptsDir)+string(os.PathSeparator)) {
+		if err := checkReceiptPath(clean, receiptsDir); err != nil {
+			return nil, err
+		}
 		raw, err := os.ReadFile(clean)
 		if err != nil {
 			return nil, err
 		}
 		var m map[string]interface{}
-		if err := json.Unmarshal(raw, &m); err != nil {
+		if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf}), &m); err != nil {
+			return nil, err
+		}
+		if err := recoverJournal(clean, m); err != nil {
 			return nil, err
 		}
 		return m, nil
@@ -219,7 +237,9 @@ func (a *App) OpenPath(target string) error {
 	case "logs", "receipts":
 		dir := filepath.Join(dataRoot(), target)
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-			os.MkdirAll(dir, 0o755)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
 		}
 		arg = dir
 	default:
