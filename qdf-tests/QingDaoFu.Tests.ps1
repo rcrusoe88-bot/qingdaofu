@@ -100,7 +100,7 @@ Describe 'QingDaoFu scanner' {
             $scan = Invoke-QdfScan -RulesPath $fixture.RulesPath -SkipLargeFiles -MaxDetailsPerCategory -1
             $scan.Categories.Count | Should Be 1
             $scan.Categories[0].ItemCount | Should Be 1
-            $scan.Categories[0].Files[0].Path | Should Be $fixture.OldFile
+            $scan.Categories[0].Files[0].Path | Should Be (Get-Item -LiteralPath $fixture.OldFile).FullName
         }
         finally {
             Remove-QdfTestFixture -Fixture $fixture
