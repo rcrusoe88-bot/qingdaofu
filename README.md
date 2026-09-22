@@ -1,8 +1,6 @@
 # 清道夫
 
-**➡️ [下载最新版 qingdaofu-portable-v1.0.1.zip](https://github.com/rcrusoe88-bot/qingdaofu/releases/download/v1.0.1/qingdaofu-portable-v1.0.1.zip)** （9.8 MB） · [查看所有版本](../../releases)
-
-解压 → 双击 `启动清道夫.cmd`。压缩包里的「使用前必读.txt」写了完整三步和会遇到的警告。
+从 Releases 下载便携包，解压 → 双击 `启动清道夫.cmd`。压缩包里的「使用前必读.txt」写了完整三步和会遇到的警告。
 
 > **会被 Windows 和杀毒软件拦，这是正常的。** 清道夫没有数字签名，而且它的工作就是删文件 —— 这个行为特征跟恶意软件相似。所有清理工具都会被拦，不是程序有问题。
 >
