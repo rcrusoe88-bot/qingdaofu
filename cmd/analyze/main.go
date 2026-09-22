@@ -347,18 +347,8 @@ func (m model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.multiSelected[entry.Path] = true
 			}
 		}
-	case "d", "delete":
-		if len(m.entries) > 0 {
-			entry := m.entries[m.selected]
-			m.deleteConfirm = true
-			m.deleteTarget = entry.Path
-		}
-	case "D":
-		// Delete all selected
-		if len(m.multiSelected) > 0 {
-			m.deleteConfirm = true
-			m.deleteTarget = fmt.Sprintf("%d items", len(m.multiSelected))
-		}
+	case "d", "delete", "D":
+		m.err = fmt.Errorf("legacy analyzer is read-only; use QingDaoFu cleanup")
 	case "f":
 		m.showLargeFiles = !m.showLargeFiles
 	case "r":
@@ -486,7 +476,7 @@ func (m model) View() string {
 
 	// Footer with keybindings
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s↑↓%s navigate  %s↵%s enter  %s←%s back  %sf%s files  %sd%s delete  %sr%s refresh  %sq%s quit%s\n",
+	b.WriteString(fmt.Sprintf("%s↑↓%s navigate  %s↵%s enter  %s←%s back  %sf%s files  %sd%s read-only  %sr%s refresh  %sq%s quit%s\n",
 		colorCyan, colorReset,
 		colorCyan, colorReset,
 		colorCyan, colorReset,
@@ -515,19 +505,10 @@ func (m model) scanPath(path string) tea.Cmd {
 	}
 }
 
-// deletePath deletes a file or directory with protection checks
+// Legacy analysis is read-only; deletion must use the audited rule executor.
 func (m model) deletePath(path string) tea.Cmd {
 	return func() tea.Msg {
-		// Safety check: never delete protected paths
-		if isProtectedPath(path) {
-			return deleteCompleteMsg{
-				path: path,
-				err:  fmt.Errorf("cannot delete protected system path: %s", path),
-			}
-		}
-
-		err := os.RemoveAll(path)
-		return deleteCompleteMsg{path: path, err: err}
+		return deleteCompleteMsg{path: path, err: fmt.Errorf("legacy analyzer is read-only; use QingDaoFu cleanup with reviewed rules")}
 	}
 }
 

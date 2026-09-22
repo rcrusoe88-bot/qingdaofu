@@ -1,0 +1,241 @@
+[
+  {
+    "id": "app-updater-installer-cache",
+    "category": "下载与安装包",
+    "name": "更新器残留安装包",
+    "description": "electron-updater 更新完成后残留的安装包：目录名以 -updater 结尾、内容只有 installer.exe（本机实测 7 个共约 1.5 GB）。删除后下次更新会重新下载，故移入回收站、默认不勾选、仅清理 30 天前的。",
+    "kind": "cleanup",
+    "risk": "careful",
+    "action": "recycle",
+    "defaultSelected": false,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\*-updater"
+    ],
+    "filePatterns": [
+      "*.exe"
+    ],
+    "recurse": false,
+    "minAgeDays": 30
+  },
+  {
+    "id": "dev-uv",
+    "category": "开发缓存",
+    "name": "uv 缓存",
+    "description": "uv 包管理器的下载与构建缓存，重新安装会自动重新下载，已建好的虚拟环境不受影响。目录内小文件极多，扫描耗时可能较长。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\uv\\cache"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "dev-claude-desktop",
+    "category": "开发缓存",
+    "name": "Claude 桌面版缓存",
+    "description": "Claude 桌面版（Claude Code）的网页、代码与着色器缓存及日志，不碰会话记录与登录状态。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\Claude-3p\\Cache",
+      "%LOCALAPPDATA%\\Claude-3p\\Code Cache",
+      "%LOCALAPPDATA%\\Claude-3p\\GPUCache",
+      "%LOCALAPPDATA%\\Claude-3p\\DawnGraphiteCache",
+      "%LOCALAPPDATA%\\Claude-3p\\DawnWebGPUCache",
+      "%LOCALAPPDATA%\\Claude-3p\\blob_storage",
+      "%LOCALAPPDATA%\\Claude-3p\\Crashpad",
+      "%LOCALAPPDATA%\\Claude-3p\\logs"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "dev-claude-vm-bundles",
+    "category": "开发缓存",
+    "name": "Claude 虚拟机镜像",
+    "description": "Claude 桌面版下载的沙箱虚拟机镜像（本机约 9 GB）。再次使用相关功能时需重新下载，故默认不勾选、移入回收站且仅清理 30 天前的。",
+    "kind": "cleanup",
+    "risk": "careful",
+    "action": "recycle",
+    "defaultSelected": false,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\Claude-3p\\vm_bundles"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 30
+  },
+  {
+    "id": "webview2-app-cache",
+    "category": "WebView2 应用",
+    "name": "WebView2 应用缓存",
+    "description": "使用系统 WebView2 组件的桌面应用（星连VPN、CC Switch、Clash Verge、小米电脑管家等）的网页、代码与着色器缓存，不处理 Cookie 和登录状态。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\*\\EBWebView\\Default\\Cache",
+      "%LOCALAPPDATA%\\*\\EBWebView\\Default\\Code Cache",
+      "%LOCALAPPDATA%\\*\\EBWebView\\Default\\GPUCache",
+      "%LOCALAPPDATA%\\*\\EBWebView\\Default\\Service Worker\\CacheStorage",
+      "%LOCALAPPDATA%\\*\\EBWebView\\GrShaderCache",
+      "%LOCALAPPDATA%\\*\\EBWebView\\ShaderCache",
+      "%LOCALAPPDATA%\\*\\EBWebView\\Crashpad",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\Default\\Cache",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\Default\\Code Cache",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\Default\\GPUCache",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\Default\\Service Worker\\CacheStorage",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\GrShaderCache",
+      "%LOCALAPPDATA%\\MI\\XiaomiPCManager\\EBWebView\\Crashpad"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "cn-ima-cache",
+    "category": "国内软件",
+    "name": "ima.copilot 缓存",
+    "description": "腾讯 ima 知识助手的网页、代码与着色器缓存，不处理扩展、历史记录和登录状态。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\*\\Cache",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\*\\Code Cache",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\*\\GPUCache",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\*\\Service Worker\\CacheStorage",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\GrShaderCache",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\ShaderCache",
+      "%LOCALAPPDATA%\\ima.copilot\\User Data\\Crashpad"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "cn-wps-cache",
+    "category": "国内软件",
+    "name": "WPS Office 缓存",
+    "description": "WPS Office 的运行缓存与日志，删后自动重建；不碰备份、文档和插件目录。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%APPDATA%\\kingsoft\\office6\\cache",
+      "%APPDATA%\\kingsoft\\office6\\log"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "cn-huorong-appstore-cache",
+    "category": "国内软件",
+    "name": "火绒应用商店缓存",
+    "description": "火绒应用商店内置页面的网页与代码缓存（实测约 198 MB），不碰商店的 Cookie 与本地数据。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\Huorong\\AppStore\\storecache\\Cache",
+      "%LOCALAPPDATA%\\Huorong\\AppStore\\storecache\\Code Cache"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "browser-crashpad",
+    "category": "浏览器",
+    "name": "浏览器崩溃转储",
+    "description": "Chrome / Edge 的 Crashpad 崩溃报告与转储，仅用于问题排查，可安全删除。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Crashpad",
+      "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Crashpad"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "app-cherrystudio-cache",
+    "category": "聊天与影音",
+    "name": "Cherry Studio 缓存",
+    "description": "Cherry Studio 的网页、代码缓存与运行日志；不碰 Data 目录（那里是对话与配置）。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%APPDATA%\\CherryStudio\\Cache",
+      "%APPDATA%\\CherryStudio\\Code Cache",
+      "%APPDATA%\\CherryStudio\\GPUCache",
+      "%APPDATA%\\CherryStudio\\DawnGraphiteCache",
+      "%APPDATA%\\CherryStudio\\DawnWebGPUCache",
+      "%APPDATA%\\CherryStudio\\blob_storage",
+      "%APPDATA%\\CherryStudio\\Crashpad",
+      "%APPDATA%\\CherryStudio\\logs"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  },
+  {
+    "id": "dev-antigravity-cache",
+    "category": "开发缓存",
+    "name": "Antigravity 缓存",
+    "description": "Antigravity 编辑器的网页、代码与着色器缓存及日志，不碰登录状态与本地设置。",
+    "kind": "cleanup",
+    "risk": "safe",
+    "action": "delete",
+    "defaultSelected": true,
+    "pathTemplates": [
+      "%APPDATA%\\Antigravity\\Cache",
+      "%APPDATA%\\Antigravity\\Code Cache",
+      "%APPDATA%\\Antigravity\\GPUCache",
+      "%APPDATA%\\Antigravity\\DawnGraphiteCache",
+      "%APPDATA%\\Antigravity\\DawnWebGPUCache",
+      "%APPDATA%\\Antigravity\\blob_storage",
+      "%APPDATA%\\Antigravity\\logs"
+    ],
+    "filePatterns": [
+      "*"
+    ],
+    "recurse": true,
+    "minAgeDays": 0
+  }
+]

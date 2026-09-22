@@ -59,8 +59,8 @@ tests/AGENTS.md
 # Build artifacts
 dist/
 gui/build/bin/
-analyze
-status
+/analyze
+/status
 bin/analyze-*
 bin/status-*
 bin/*.exe

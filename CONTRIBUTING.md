@@ -321,3 +321,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File qdf-tests\Run-Tests.ps1
 5. Open PR targeting `dev`
 
 CI will verify formatting, linting, and tests.
+
+## 发布回归要求（v1.1.1 起）
+
+- 正式基线是已发布 v1.1.0 的 82 条规则。`qdf-tests/fixtures` 固定其规则 ID 与新增 11 条的完整定义；修改基线必须在 PR 明确解释，不可为通过测试而静默删除。
+- 六条暂时禁用规则仍保留定义与原因。不要取消保护名单来让规则生效。
+- VERSION、Wails productVersion、旧版本回退值必须一致。正式包只使用 `scripts/build-portable.ps1`（委托给 packaging），不能复用外部 EXE。
+- 发布前必须核验 CI 与实际 ZIP；包内 manifest 保存源提交、规则集合、各文件哈希。没有真实应用删除验证时，不得将隔离测试描述为全应用安全认证。

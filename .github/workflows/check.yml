@@ -1,85 +1,32 @@
 name: Check
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 permissions:
-  contents: write
-
+  contents: read
 jobs:
-  format:
-    name: Format & Lint
+  syntax:
     runs-on: windows-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref) || github.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.0'
-
-      - name: Install Go tools
-        run: |
-          # Pinned: x/tools v0.50.0 needs go >= 1.26.0, and @latest drifts
-          # forward until it no longer builds with the pinned toolchain.
-          go install golang.org/x/tools/cmd/goimports@v0.50.0
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-
-      - name: Format Go code
-        run: |
-          $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
-          Get-ChildItem -Path cmd -Recurse -Filter "*.go" | ForEach-Object {
-            goimports -w $_.FullName
-          }
+          go-version-file: go.mod
+      - name: Check formatting without rewriting sources
         shell: pwsh
-
-      - name: Run golangci-lint
         run: |
-          $env:PATH = "$(go env GOPATH)\bin;$env:PATH"
-          cd cmd/analyze
-          golangci-lint run --timeout 5m
-          cd ../status
-          golangci-lint run --timeout 5m
-        shell: pwsh
-        continue-on-error: true
-
+          $files = Get-ChildItem cmd,gui -Recurse -Filter *.go | Select-Object -ExpandProperty FullName
+          $unformatted = & gofmt -l $files
+          if ($LASTEXITCODE -ne 0 -or $unformatted) { throw "Unformatted Go files: $unformatted" }
       - name: Check PowerShell syntax
+        shell: powershell
         run: |
-          $hasErrors = $false
-          $scripts = Get-ChildItem -Path . -Recurse -Include "*.ps1" -Exclude "*.Tests.ps1"
-          foreach ($script in $scripts) {
-            $errors = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseFile($script.FullName, [ref]$null, [ref]$errors)
-            if ($errors.Count -gt 0) {
-              Write-Host "Syntax errors in $($script.Name):" -ForegroundColor Red
-              $errors | ForEach-Object { Write-Host "  $_" }
-              $hasErrors = $true
-            }
+          $failed = $false
+          Get-ChildItem app,lib,bin,scripts,packaging,qdf-tests -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null; $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors) { $errors | Write-Output; $failed = $true }
           }
-          if ($hasErrors) { exit 1 }
-          Write-Host "All PowerShell scripts have valid syntax" -ForegroundColor Green
-        shell: pwsh
-
-      - name: Commit formatting changes
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          $changes = git status --porcelain
-          if ($changes) {
-            git add .
-            git commit -m "chore: auto format code"
-            git push
-            Write-Host "Formatting changes committed"
-          } else {
-            Write-Host "No formatting changes needed"
-          }
-        shell: pwsh
+          if ($failed) { exit 1 }

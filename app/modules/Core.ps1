@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'PathSafety.ps1')
 $script:QdfUiStrings = $null
 $script:QdfProtectedExactPathCache = $null
 $script:QdfProtectedPrefixPathCache = $null
@@ -177,6 +178,21 @@ function Test-QdfReparsePoint {
     return (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
+function Test-QdfPathChain {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $current = Get-QdfNormalizedPath -Path $Path
+    if ([string]::IsNullOrWhiteSpace($current)) { return $false }
+    try {
+        while (-not [string]::IsNullOrWhiteSpace($current)) {
+            $attributes = [System.IO.File]::GetAttributes($current)
+            if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+            $current = [System.IO.Path]::GetDirectoryName($current)
+        }
+        return $true
+    }
+    catch { return $false }
+}
+
 function Get-QdfProtectedExactPaths {
     if ($null -ne $script:QdfProtectedExactPathCache) {
         return $script:QdfProtectedExactPathCache
@@ -315,7 +331,7 @@ function Resolve-QdfRuleRoots {
         }
 
         foreach ($item in $items) {
-            if (Test-QdfReparsePoint -Item $item) {
+            if (-not (Test-QdfPathChain -Path $item.FullName)) {
                 if ($null -ne $SkippedItems) {
                     $SkippedItems.Add([pscustomobject]@{
                         Path = $item.FullName
@@ -387,6 +403,7 @@ function Get-QdfFilesFromRoot {
 
     while ($queue.Count -gt 0) {
         $current = $queue.Dequeue()
+        if (-not (Test-QdfPathChain -Path $current.FullName)) { continue }
 
         if ($current.PSIsContainer) {
             $children = @()
@@ -476,7 +493,7 @@ function Test-QdfCandidatePath {
     else {
         $normalizedPath = Get-QdfNormalizedPath -Path $Path
     }
-    if (Test-QdfProtectedNormalizedPath -NormalizedPath $normalizedPath) {
+    if (-not (Test-QdfPathChain -Path $normalizedPath) -or (Test-QdfProtectedNormalizedPath -NormalizedPath $normalizedPath)) {
         return $false
     }
 
@@ -516,10 +533,10 @@ function New-QdfReceipt {
         New-Item -ItemType Directory -Path $ReceiptDirectory -Force | Out-Null
     }
 
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $stamp = [guid]::NewGuid().ToString('N')
     $receiptPath = Join-Path $ReceiptDirectory ("receipt-$stamp-$PID.json")
     $json = $Result | ConvertTo-Json -Depth 8
-    [System.IO.File]::WriteAllText($receiptPath, $json, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($receiptPath, $json, (New-Object System.Text.UTF8Encoding($false)))
     return $receiptPath
 }
 

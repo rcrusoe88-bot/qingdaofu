@@ -118,6 +118,7 @@ function Invoke-QdfScan {
     $allRules = @(Get-QdfPropertyValue -Object $ruleset -Name 'rules' -DefaultValue @())
     $selectedRules = New-Object System.Collections.Generic.List[object]
     foreach ($rule in $allRules) {
+        if ((Get-QdfPropertyValue $rule 'enabled' $true) -eq $false) { continue }
         $id = [string](Get-QdfPropertyValue -Object $rule -Name 'id' -DefaultValue '')
         if ($RuleIds.Count -eq 0 -or $RuleIds -contains $id) {
             $selectedRules.Add($rule)
@@ -137,6 +138,8 @@ function Invoke-QdfScan {
         $cutoffUtc = Get-QdfRuleCutoffUtc -Rule $rule
         $roots = @(Resolve-QdfRuleRoots -Rule $rule -SkippedItems $skippedItems)
         $files = New-Object System.Collections.Generic.List[object]
+        $itemCount = 0
+        $totalSize = 0L
 
         foreach ($root in $roots) {
             $matchedFiles = @(Get-QdfFilesFromRoot -Root $root -Rule $rule -CutoffUtc $cutoffUtc -SkippedItems $skippedItems)
@@ -151,7 +154,9 @@ function Invoke-QdfScan {
                     continue
                 }
 
-                $files.Add($candidate)
+                $itemCount++
+                $totalSize += [long]$candidate.Size
+                if ($MaxDetailsPerCategory -lt 0 -or $files.Count -lt $MaxDetailsPerCategory) { $files.Add($candidate) }
             }
         }
 
@@ -159,10 +164,6 @@ function Invoke-QdfScan {
             continue
         }
 
-        $totalSize = 0L
-        foreach ($file in $files) {
-            $totalSize += [long]$file.Size
-        }
 
         $details = @()
         if ($MaxDetailsPerCategory -lt 0) {
@@ -180,10 +181,10 @@ function Invoke-QdfScan {
             Risk = [string](Get-QdfPropertyValue -Object $rule -Name 'risk' -DefaultValue 'safe')
             Action = [string](Get-QdfPropertyValue -Object $rule -Name 'action' -DefaultValue 'delete')
             DefaultSelected = [bool](Get-QdfPropertyValue -Object $rule -Name 'defaultSelected' -DefaultValue $false)
-            ItemCount = $files.Count
+            ItemCount = $itemCount
             TotalSize = $totalSize
             TotalSizeText = Format-QdfSize -Bytes $totalSize
-            DetailsTruncated = ($files.Count -gt $details.Count)
+            DetailsTruncated = ($itemCount -gt $details.Count)
             Files = @($details)
         })
     }

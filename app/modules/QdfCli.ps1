@@ -25,6 +25,8 @@ param(
 
     [string]$ReceiptPath = '',
 
+    [string]$CancelPath = '',
+
     [int]$Last = 50
 )
 
@@ -44,7 +46,16 @@ $script:QdfCliExitCode = 0
 function Write-QdfCliLine {
     param([Parameter(Mandatory = $true)][object]$Object)
     $json = $Object | ConvertTo-Json -Compress -Depth 8
-    [Console]::Out.WriteLine($json)
+    if ($json.Length -gt 32768) {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        for ($offset = 0; $offset -lt $bytes.Length; $offset += 24576) {
+            $count = [math]::Min(24576, $bytes.Length - $offset)
+            $frame = @{ type = 'result-chunk'; data = [Convert]::ToBase64String($bytes, $offset, $count) }
+            [Console]::Out.WriteLine(($frame | ConvertTo-Json -Compress))
+        }
+        [Console]::Out.WriteLine('{"type":"result-end"}')
+    }
+    else { [Console]::Out.WriteLine($json) }
 }
 
 function Write-QdfCliError {
@@ -91,6 +102,7 @@ try {
             if ($RuleIds.Count -gt 0) {
                 $allRules = @(
                     foreach ($rule in $allRules) {
+                if ((Get-QdfPropertyValue $rule 'enabled' $true) -eq $false) { continue }
                         $id = [string](Get-QdfPropertyValue -Object $rule -Name 'id' -DefaultValue '')
                         if ($RuleIds -contains $id) {
                             $rule
@@ -127,7 +139,7 @@ try {
                 $single = Invoke-QdfScan `
                     -RulesPath $script:QdfRulesPath `
                     -RuleIds @($id) `
-                    -SkipLargeFiles
+                    -SkipLargeFiles -MaxDetailsPerCategory 200
                 @($single.Categories)
             })
 
@@ -186,7 +198,7 @@ try {
             $summary = Invoke-QdfClean `
                 -RulesPath $script:QdfRulesPath `
                 -SelectedRuleIds $RuleIds `
-                -DryRun:$DryRun
+                -DryRun:$DryRun -CancelPath $CancelPath
             $resultObject = @{ type = 'result' }
             foreach ($property in $summary.PSObject.Properties) {
                 $resultObject[$property.Name] = $property.Value
@@ -220,7 +232,7 @@ try {
             $root = Join-Path $script:QdfDataRoot 'receipts'
             $full = [System.IO.Path]::GetFullPath($ReceiptPath)
             $fullRoot = [System.IO.Path]::GetFullPath($root)
-            if (-not $full.StartsWith($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            if (-not (Test-QdfPathChain $full) -or -not $full.StartsWith($fullRoot.TrimEnd('\') + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
                 throw "Receipt path is outside the receipts directory: $ReceiptPath"
             }
             Write-QdfCliLine -Object (Read-QdfJsonFile -Path $full)

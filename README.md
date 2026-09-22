@@ -1,113 +1,78 @@
 # 清道夫
 
-从 Releases 下载便携包，解压 → 双击 `启动清道夫.cmd`。压缩包里的「使用前必读.txt」写了完整三步和会遇到的警告。
+Windows 普通用户的便携式空间清理工具。基于 [tw93/Mole](https://github.com/tw93/Mole) Windows 分支继续开发，正式交付的是清道夫 GUI，而不是旧 Mole 命令行安装包。
 
-> **会被 Windows 和杀毒软件拦，这是正常的。** 清道夫没有数字签名，而且它的工作就是删文件 —— 这个行为特征跟恶意软件相似。所有清理工具都会被拦，不是程序有问题。
->
-> - 弹出「Windows 已保护你的电脑」→ 点「更多信息」→ 点「仍要运行」
-> - 杀毒软件报警，或解压到一半文件被隔离 → 把解压出来的文件夹整个加进白名单
+## 当前版本：v1.1.1
 
----
+**以实际发布的 v1.1.0 为基线修整，完整保留其 82 条规则，包括新增的 11 条。**
+其中 6 条旧规则出于安全原因暂时禁用，仍保留定义与原因；实际启用的是 75 条清理规则及 1 条只读大文件规则。规则数量不等于扫描命中数量，未安装对应软件时会自动隐藏空类别。
 
-清道夫是一个面向 Windows 普通用户的便携式空间清理工具。它基于
-[tw93/Mole](https://github.com/tw93/Mole) 的 `windows` 分支继续开发，
-只处理当前用户权限下的已知缓存和候选文件。
+本版本重点修复路径边界、清理中断记录、回执编码、任务并发与大结果传输。更新记录见 [RELEASE.md](RELEASE.md)。
 
-不需要管理员权限，不联网，不上传文件路径、文件名或软件清单。
+## 下载与使用
 
-## 使用方式
+从 [Releases](https://github.com/rcrusoe88-bot/qingdaofu/releases/latest) 下载 `qingdaofu-1.1.1-x64.zip` 和 `SHA256SUMS.txt`。
 
-1. 解压整个便携包（不要只把 exe 拷出来，它需要同目录的 `app\` 和 `rules\`）。
-2. 双击 `启动清道夫.cmd`。
-3. 在「清理」页点「开始扫描」。
-4. 展开类别、检查路径后，勾选需要处理的内容。
-5. 确认后执行清理，并查看操作回执。
+1. 核对来源与 SHA-256：`Get-FileHash .\qingdaofu-1.1.1-x64.zip -Algorithm SHA256`。
+2. 解压整个文件夹，保留 EXE 同目录下的 `app\`、`rules\`；不要只复制 EXE。
+3. 双击“启动清道夫.cmd”。在“清理”页扫描，展开候选路径并勾选，再确认处理。
+4. “分析”页只读展示大文件；“记录”页查看操作状态和回执。
 
-界面分三个页签：
+> 未签名程序可能触发 Windows 或杀毒软件警告，但不能一概认定是误报。无法确认来源、校验值或报警原因时停止运行；不要为整个目录关闭防护、加入白名单或直接恢复被隔离文件。哈希用于完整性核验，不等同于数字签名或安全认证。
 
-- **清理** —— 扫描 → 勾选 → 清理 → 回执。
-- **分析** —— 列出用户目录中大于 1GB 的文件，只读展示，不提供删除。
-- **记录** —— 历次操作的历史与回执详情。
+系统要求：Windows 10 22H2 / Windows 11 x64、普通用户权限、WebView2 运行时。核心扫描与清理不主动上传文件路径、文件名或软件清单。
 
-扫描本身不会删除文件。明确可再生的缓存会在最终确认后永久删除；
-可能包含个人内容的项目会移入回收站。
+## 保留的 v1.1.0 新增规则
 
-## 扫描范围
-
-按「可再生缓存 / 需要你确认」分成两组。默认勾选的都是**删掉之后会自动重建**
-的缓存，不增加误删风险。
-
-**可再生缓存（默认勾选，永久删除）**
-
-| 类别 | 覆盖内容 |
+| 规则 | 处理方式 |
 | --- | --- |
-| 显卡缓存 | NVIDIA / AMD / Intel 的着色器缓存，DirectX 与 Vulkan 缓存 |
-| 浏览器 | Chrome、Edge、Firefox、Brave、Opera 的网页与着色器缓存 |
-| 开发缓存 | npm / Yarn / Bun / pip / Poetry / NuGet / Go / Cargo / Gradle 等包缓存，VS Code、JetBrains、Visual Studio、Zed、Sublime 的索引与缓存 |
-| 聊天与影音 | Discord、Slack、Teams、Zoom、Spotify、应用商店缓存 |
-| 办公与创意 | Office 文档缓存、Adobe 媒体缓存、Autodesk 缓存 |
-| 云同步 | OneDrive 与 Google Drive 的同步日志 |
-| 游戏启动器 | Steam、Epic、EA、GOG、育碧、战网的启动器缓存 |
-| 系统与用户项 | 用户临时文件、缩略图与图标缓存、错误报告与崩溃转储 |
+| uv、Claude 桌面版、Antigravity 缓存 | 默认勾选，永久删除 |
+| ima.copilot、WPS Office、火绒应用商店缓存 | 默认勾选，永久删除 |
+| 浏览器 Crashpad、WebView2、Cherry Studio 缓存 | 默认勾选，永久删除 |
+| 更新器残留安装包、Claude 虚拟机镜像 | 默认不勾选，30 天阈值，移入回收站 |
 
-**需要你确认（默认不勾选，移入回收站）**
+这 11 条规则的定义与 v1.1.0 发行基线保持一致；这不代表本轮对所有第三方应用进行了真实删除验证。
 
-| 类别 | 覆盖内容 |
-| --- | --- |
-| 下载与安装包 | 90 天未修改的下载文件、桌面上的旧安装包 |
-| 录屏与截图 | 90 天前的游戏录屏、截图与游戏回放 |
-| 国内软件 | 微信的日志、内置浏览器缓存、小程序与视频号插件 |
-| 办公与创意 | Office 自动恢复留下的临时文件（只处理 7 天前的） |
+## 安全边界与行为变化
 
-**只读展示**：用户常用目录中大于 1GB 的文件，不提供删除操作。
+- 扫描不删除文件。永久删除不可恢复；回收站文件仍占空间，需用户自行清空才释放。
+- 检查候选路径和所有祖先的重解析点；永久删除时固定父目录，并通过文件句柄重新校验大小与修改时间。不可验证、被占用或已变化的项目不会强行删除。
+- 清理前建立回执，每个文件持久化计划与结果。中断后只有计划、没有结果的项目标为“未知”，不会假定成功。
+- 清理可请求停止，等待当前操作及回执保存；运行期间关闭窗口先请求停止，完成后可再次关闭。扫描或 Windows 回收站对话框可能需要等待。
+- 后台失败会恢复界面；同一窗口不允许并行启动清理/扫描任务。
+- AWS、Azure、Kubernetes、Steam 规则与保护目录冲突，暂时禁用；Office 与 Zoom 的宽泛数据目录规则暂停，等待专项验证。GOG 的 ProgramData 日志目标已移除。**没有通过取消保护来启用规则。**
+- 旧 Go 分析器删除入口已关闭。旧 Mole CLI 不在正式清道夫便携包中，其余旧代码不等同于本次已验证的产品范围。
 
-> 规则表是数据驱动的（`rules\rules.json`）。某台机器上没装对应软件时，
-> 那一类会扫到 0 个文件并自动隐藏，不会出现在界面上。
+**限制**：回收站仍依赖 Windows 路径接口；即使固定父目录，也不宣称对恶意同用户进程的所有竞态提供完整隔离。断电、系统强制结束后的未知结果需要用户核查。此版本未完成所有第三方应用、所有 Windows 环境的人工验收。
 
-## 安全边界
+## 操作数据
 
-- 不请求管理员权限。
-- 不清理注册表、WinSxS、Windows Update、休眠文件和系统还原点。
-- 不强制关闭浏览器或其他应用，被占用文件会跳过。
-- 不扫描重解析点，不跟随目录联接或符号链接。
-- 所有候选文件必须位于规则展开出的目录内，并通过保护路径校验。
-- 保护名单覆盖系统目录、密钥与凭据目录（`.ssh`、`.aws`、`.kube` 等），
-  以及浏览器 Cookie、登录数据、聊天数据库这类文件。
-- 永久删除与移入回收站会在确认窗口中分别列出。
-- 回收站中的文件仍然占用磁盘空间，需要用户自行清空回收站后才会释放。
-- 清理前会重新扫描一次候选文件，只删除这次扫描确认过的文件。
+`%LOCALAPPDATA%\QingDaoFu\receipts` 保存 JSON 回执及同名 `.jsonl` 逐项记录；`logs` 保存摘要日志。
+界面展示部分明细，完整逐项日志留在本地。日志包含文件路径，应按个人数据保管。
 
-## 数据位置
+## 开发、测试与打包
 
-程序运行数据保存在：
-
-```text
-%LOCALAPPDATA%\QingDaoFu
-```
-
-其中 `receipts` 保存每次操作的候选文件回执，`logs` 保存摘要日志。
-清道夫不会联网，也不会上传文件路径、文件名或软件清单。
-
-## 系统要求
-
-- Windows 10 22H2 或 Windows 11 x64。
-- 普通用户权限。
-- WebView2 运行时（Windows 11 与较新的 Windows 10 已内置）。
-
-## 开发与验证
+需要 Go（版本要求见 `go.mod`）、Node.js、Windows PowerShell 5.1、Pester 3.4.0 和 Wails CLI v2.16.0。
 
 ```powershell
-# 单元测试
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\qdf-tests\Run-Tests.ps1
+go test -mod=readonly ./gui ./cmd/...
+go vet -mod=readonly ./gui ./cmd/...
+node --test qdf-tests/frontend.test.cjs
 
-# 打包便携版（会先构建 GUI，产物在 dist\）
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\Build-Portable.ps1
+# 重新构建 GUI、运行测试、校验 ZIP；输出至新的 release/build-* 目录
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable.ps1
 
-# 只读探测：在当前机器上验证清理目标路径与体积，不删除任何文件
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Probe-Targets.ps1
+# 对下载或生成的实际 ZIP 独立校验
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\Test-PortableArchive.ps1 -ArchivePath <zip路径>
 ```
+
+打包校验覆盖完整 82 条规则 ID、11 条新增规则定义、VERSION、EXE 版本以及包内文件哈希。包内 `BUILD-MANIFEST.json` 记录源提交、规则集合、构建时间、验证方式与文件哈希。
+
+发布流程使用同一个打包入口，自动生成草稿；核验 CI、实际附件和 SHA-256 后才公开发布。不再复用未经重建的 EXE，也不使用旧 `scripts/build-release.ps1` 发布清道夫。
+
+本轮验证不包括真实用户缓存的破坏性清理、真实回收站端到端验收或 Go race 检测；后者需要额外的 CGO/C 编译器。
 
 ## 许可证
 
-项目继续使用 MIT 许可证。来源说明见 `THIRD_PARTY_NOTICES.md`。
-上游 [tw93/Mole](https://github.com/tw93/Mole) 的原始说明保留在 `README-MOLE.md`。
+MIT。来源说明见 `THIRD_PARTY_NOTICES.md`，上游原始说明保留在 `README-MOLE.md`。

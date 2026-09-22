@@ -702,7 +702,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%USERPROFILE%\\.aws\\cli\\cache"
       ],
@@ -710,7 +710,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "目标位于保护目录内，安全边界未放宽。"
     },
     {
       "id": "dev-azure",
@@ -720,7 +722,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%USERPROFILE%\\.azure\\logs"
       ],
@@ -728,7 +730,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "目标位于保护目录内，安全边界未放宽。"
     },
     {
       "id": "dev-gcloud",
@@ -756,7 +760,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%USERPROFILE%\\.kube\\cache"
       ],
@@ -764,7 +768,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "目标位于保护目录内，安全边界未放宽。"
     },
     {
       "id": "dev-terraform",
@@ -953,7 +959,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%APPDATA%\\Zoom\\data"
       ],
@@ -961,7 +967,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "待验证离线、未同步或恢复数据的安全性，暂不提供清理。"
     },
     {
       "id": "app-spotify",
@@ -1009,7 +1017,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\OfficeFileCache",
         "%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\Wef",
@@ -1021,7 +1029,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "待验证离线、未同步或恢复数据的安全性，暂不提供清理。"
     },
     {
       "id": "app-office-tmp",
@@ -1130,7 +1140,7 @@
       "kind": "cleanup",
       "risk": "safe",
       "action": "delete",
-      "defaultSelected": true,
+      "defaultSelected": false,
       "pathTemplates": [
         "%ProgramFiles(x86)%\\Steam\\appcache\\httpcache",
         "%ProgramFiles(x86)%\\Steam\\appcache\\librarycache",
@@ -1140,7 +1150,9 @@
         "*"
       ],
       "recurse": true,
-      "minAgeDays": 0
+      "minAgeDays": 0,
+      "enabled": false,
+      "disabledReason": "目标位于保护目录内，安全边界未放宽。"
     },
     {
       "id": "game-epic",
@@ -1190,8 +1202,7 @@
       "action": "delete",
       "defaultSelected": true,
       "pathTemplates": [
-        "%LOCALAPPDATA%\\GOG.com\\Galaxy\\webcache",
-        "%ProgramData%\\GOG.com\\Galaxy\\logs"
+        "%LOCALAPPDATA%\\GOG.com\\Galaxy\\webcache"
       ],
       "filePatterns": [
         "*"
