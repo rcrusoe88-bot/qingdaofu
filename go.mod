@@ -1,13 +1,13 @@
 module github.com/tw93/mole/windows
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.16.0
-	golang.org/x/text v0.39.0
+	golang.org/x/text v0.42.0
 )
 
 require (
