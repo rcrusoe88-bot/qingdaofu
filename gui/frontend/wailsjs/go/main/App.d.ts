@@ -5,13 +5,19 @@ export function Cancel():Promise<void>;
 
 export function Clean(arg1:Array<string>):Promise<void>;
 
+export function EmptyRecycleBin():Promise<void>;
+
 export function GetHistory(arg1:number):Promise<Array<Record<string, any>>>;
+
+export function GetOrphans():Promise<void>;
 
 export function GetReceipt(arg1:string):Promise<Record<string, any>>;
 
 export function GetRules():Promise<string>;
 
 export function GetStrings():Promise<string>;
+
+export function GetWhitelist():Promise<Record<string, any>>;
 
 export function OpenPath(arg1:string):Promise<void>;
 

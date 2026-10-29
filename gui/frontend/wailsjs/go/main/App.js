@@ -10,8 +10,16 @@ export function Clean(arg1) {
   return window['go']['main']['App']['Clean'](arg1);
 }
 
+export function EmptyRecycleBin() {
+  return window['go']['main']['App']['EmptyRecycleBin']();
+}
+
 export function GetHistory(arg1) {
   return window['go']['main']['App']['GetHistory'](arg1);
+}
+
+export function GetOrphans() {
+  return window['go']['main']['App']['GetOrphans']();
 }
 
 export function GetReceipt(arg1) {
@@ -24,6 +32,10 @@ export function GetRules() {
 
 export function GetStrings() {
   return window['go']['main']['App']['GetStrings']();
+}
+
+export function GetWhitelist() {
+  return window['go']['main']['App']['GetWhitelist']();
 }
 
 export function OpenPath(arg1) {
