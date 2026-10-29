@@ -343,6 +343,23 @@ function Test-QdfProtectedNormalizedPath {
     return ($script:QdfProtectedLeafNameCache -contains $leafName)
 }
 
+# Leaf-name check without path normalization. Used per scanned file: the rule
+# root was already checked against the protected paths, and reparse points are
+# refused during traversal, so a child cannot land under a protected prefix.
+# The removal boundary still runs the full Test-QdfProtectedPath.
+function Test-QdfProtectedLeafName {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    if ($null -eq $script:QdfProtectedLeafNameCache) {
+        $script:QdfProtectedLeafNameCache = @(
+            'Cookies', 'Cookies-journal', 'Login Data', 'Login Data-journal',
+            'Web Data', 'Web Data-journal', 'History', 'History-journal',
+            'Bookmarks', 'NTUSER.DAT', 'SAM', 'SECURITY', 'SYSTEM'
+        )
+    }
+    return ($script:QdfProtectedLeafNameCache -contains $Name)
+}
+
 function Test-QdfProtectedPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -603,7 +620,7 @@ function Get-QdfFilesFromRoot {
                     continue
                 }
 
-                    if (Test-QdfProtectedPath -Path $childPath) {
+                    if (Test-QdfProtectedLeafName -Name $name) {
                     $SkippedItems.Add([pscustomobject]@{
                         Path = $childPath
                         Reason = 'Protected path.'
@@ -638,7 +655,7 @@ function Get-QdfFilesFromRoot {
             continue
         }
 
-        if (-not (Test-QdfProtectedPath -Path $currentPath)) {
+        if (-not (Test-QdfProtectedLeafName -Name $name)) {
             $fileInfo = New-Object System.IO.FileInfo($currentPath)
             $results.Add([pscustomobject]@{
                 FullName = $currentPath

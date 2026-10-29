@@ -214,6 +214,19 @@ Describe 'QingDaoFu script encoding' {
     }
 }
 
+Describe 'QingDaoFu leaf-name protection' {
+    It 'still blocks credential and registry leaf names during scanning' {
+        # Scanning uses the leaf-name check instead of the full path check for
+        # speed; these names must survive that shortcut.
+        Test-QdfProtectedLeafName -Name 'Cookies' | Should Be $true
+        Test-QdfProtectedLeafName -Name 'Login Data' | Should Be $true
+        Test-QdfProtectedLeafName -Name 'NTUSER.DAT' | Should Be $true
+        Test-QdfProtectedLeafName -Name 'SAM' | Should Be $true
+        Test-QdfProtectedLeafName -Name 'cache_data' | Should Be $false
+        Test-QdfProtectedLeafName -Name 'f_000001' | Should Be $false
+    }
+}
+
 Describe 'QingDaoFu whitelist' {
     It 'skips whitelisted paths during scanning' {
         $fixture = New-QdfTestFixture

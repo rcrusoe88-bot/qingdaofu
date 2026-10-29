@@ -113,23 +113,21 @@ try {
             }
 
             $cleanupRules = @()
-            $largeRule = $null
             foreach ($rule in $allRules) {
                 $kind = [string](Get-QdfPropertyValue -Object $rule -Name 'kind' -DefaultValue 'cleanup')
-                if ($kind -eq 'large-files') {
-                    $largeRule = $rule
-                }
-                else {
-                    $cleanupRules += $rule
-                }
+                # Dropped from the scan: the large-file rule walked the whole user
+                # profile looking for >1 GB files, which cost minutes on a normal
+                # machine for little return. The definition stays in rules.json so
+                # it can be reintroduced as an explicit, opt-in action.
+                if ($kind -eq 'large-files') { continue }
+                $cleanupRules += $rule
             }
 
             $total = $cleanupRules.Count
-            if ($null -ne $largeRule) {
-                $total++
-            }
             $index = 0
-            $categories = @(foreach ($rule in $cleanupRules) {
+            $categories = New-Object System.Collections.Generic.List[object]
+            $skipped = New-Object System.Collections.Generic.List[object]
+            foreach ($rule in $cleanupRules) {
                 $index++
                 $id = [string](Get-QdfPropertyValue -Object $rule -Name 'id' -DefaultValue '')
                 $name = [string](Get-QdfPropertyValue -Object $rule -Name 'name' -DefaultValue '')
@@ -142,24 +140,11 @@ try {
                     -RuleIds @($id) `
                     -SkipLargeFiles -MaxDetailsPerCategory 200 `
                     -CancelPath $CancelPath
-                @($single.Categories)
-            })
-
-            $largeFiles = @()
-            $skipped = @()
-            if ($null -ne $largeRule) {
-                $index++
-                $id = [string](Get-QdfPropertyValue -Object $largeRule -Name 'id' -DefaultValue '')
-                $name = [string](Get-QdfPropertyValue -Object $largeRule -Name 'name' -DefaultValue '')
-                Write-QdfCliLine -Object @{
-                    type = 'progress'; phase = 'scan'; ruleId = $id
-                    ruleName = $name; index = $index; total = $total
-                }
-                $largeScan = Invoke-QdfScan -RulesPath $script:QdfRulesPath -RuleIds @($id) -CancelPath $CancelPath
-                $largeFiles = @($largeScan.LargeFiles)
-                $skipped = @($largeScan.Skipped)
+                foreach ($category in @($single.Categories)) { $categories.Add($category) }
+                foreach ($entry in @($single.Skipped)) { $skipped.Add($entry) }
             }
 
+            $largeFiles = @()
             $sortedCategories = @($categories | Sort-Object -Property @{ Expression = 'TotalSize'; Descending = $true })
             $totalCandidateSize = 0L
             foreach ($category in $sortedCategories) {

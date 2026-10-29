@@ -91,5 +91,7 @@
   "emptyRecycleBin": "清空回收站",
   "emptyRecycleBinConfirm": "回收站里的文件将被永久删除，无法恢复。确定清空吗？",
   "emptyRecycleBinDone": "回收站已清空",
-  "whitelistButton": "白名单"
+  "whitelistButton": "白名单",
+  "orphanEmptyTitle": "还没有扫描",
+  "orphanEmptySub": "扫描 AppData 下可能属于已卸载软件的目录，只报告不删除。"
 }

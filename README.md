@@ -2,7 +2,7 @@
 
 Windows 普通用户的便携式空间清理工具。基于 [tw93/Mole](https://github.com/tw93/Mole) Windows 分支继续开发，正式交付的是清道夫 GUI，而不是旧 Mole 命令行安装包。
 
-## 当前版本：v1.2.0
+## 当前版本：v1.2.1
 
 **99 条规则，其中 6 条出于安全原因禁用并保留定义与原因，实际启用 92 条清理规则及 1 条只读大文件规则。** 规则数量不等于扫描命中数量，未安装对应软件时会自动隐藏空类别。
 
@@ -10,9 +10,9 @@ Windows 普通用户的便携式空间清理工具。基于 [tw93/Mole](https://
 
 ## 下载与使用
 
-从 [Releases](https://github.com/rcrusoe88-bot/qingdaofu/releases/latest) 下载 `qingdaofu-1.2.0-x64.zip` 和 `SHA256SUMS.txt`。
+从 [Releases](https://github.com/rcrusoe88-bot/qingdaofu/releases/latest) 下载 `qingdaofu-1.2.1-x64.zip` 和 `SHA256SUMS.txt`。
 
-1. 核对来源与 SHA-256：`Get-FileHash .\qingdaofu-1.2.0-x64.zip -Algorithm SHA256`。
+1. 核对来源与 SHA-256：`Get-FileHash .\qingdaofu-1.2.1-x64.zip -Algorithm SHA256`。
 2. 解压整个文件夹，保留 EXE 同目录下的 `app\`、`rules\`；不要只复制 EXE。
 3. 双击“启动清道夫.cmd”。在“清理”页扫描，展开候选路径并勾选，再确认处理。
 4. “分析”页只读展示大文件与已卸载软件残留；“记录”页查看操作状态和回执，并可打开白名单。
