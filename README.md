@@ -2,21 +2,20 @@
 
 Windows 普通用户的便携式空间清理工具。基于 [tw93/Mole](https://github.com/tw93/Mole) Windows 分支继续开发，正式交付的是清道夫 GUI，而不是旧 Mole 命令行安装包。
 
-## 当前版本：v1.1.1
+## 当前版本：v1.2.0
 
-**以实际发布的 v1.1.0 为基线修整，完整保留其 82 条规则，包括新增的 11 条。**
-其中 6 条旧规则出于安全原因暂时禁用，仍保留定义与原因；实际启用的是 75 条清理规则及 1 条只读大文件规则。规则数量不等于扫描命中数量，未安装对应软件时会自动隐藏空类别。
+**99 条规则，其中 6 条出于安全原因禁用并保留定义与原因，实际启用 92 条清理规则及 1 条只读大文件规则。** 规则数量不等于扫描命中数量，未安装对应软件时会自动隐藏空类别。
 
-本版本重点修复路径边界、清理中断记录、回执编码、任务并发与大结果传输。更新记录见 [RELEASE.md](RELEASE.md)。
+本版本新增白名单、已卸载软件残留扫描（只读）与回收站清空，并从上游 Mole 移植 13 条清理规则；同时修复了系统级规则因保护名单而永远无法命中的问题。更新记录见 [RELEASE.md](RELEASE.md)。
 
 ## 下载与使用
 
-从 [Releases](https://github.com/rcrusoe88-bot/qingdaofu/releases/latest) 下载 `qingdaofu-1.1.1-x64.zip` 和 `SHA256SUMS.txt`。
+从 [Releases](https://github.com/rcrusoe88-bot/qingdaofu/releases/latest) 下载 `qingdaofu-1.2.0-x64.zip` 和 `SHA256SUMS.txt`。
 
-1. 核对来源与 SHA-256：`Get-FileHash .\qingdaofu-1.1.1-x64.zip -Algorithm SHA256`。
+1. 核对来源与 SHA-256：`Get-FileHash .\qingdaofu-1.2.0-x64.zip -Algorithm SHA256`。
 2. 解压整个文件夹，保留 EXE 同目录下的 `app\`、`rules\`；不要只复制 EXE。
 3. 双击“启动清道夫.cmd”。在“清理”页扫描，展开候选路径并勾选，再确认处理。
-4. “分析”页只读展示大文件；“记录”页查看操作状态和回执。
+4. “分析”页只读展示大文件与已卸载软件残留；“记录”页查看操作状态和回执，并可打开白名单。
 
 > 未签名程序可能触发 Windows 或杀毒软件警告，但不能一概认定是误报。无法确认来源、校验值或报警原因时停止运行；不要为整个目录关闭防护、加入白名单或直接恢复被隔离文件。哈希用于完整性核验，不等同于数字签名或安全认证。
 
@@ -40,6 +39,10 @@ Windows 普通用户的便携式空间清理工具。基于 [tw93/Mole](https://
 - 清理前建立回执，每个文件持久化计划与结果。中断后只有计划、没有结果的项目标为“未知”，不会假定成功。
 - 清理可请求停止，等待当前操作及回执保存；运行期间关闭窗口先请求停止，完成后可再次关闭。扫描或 Windows 回收站对话框可能需要等待。
 - 后台失败会恢复界面；同一窗口不允许并行启动清理/扫描任务。
+- 白名单 `%LOCALAPPDATA%\QingDaoFu\whitelist.txt` 在规则根解析、目录遍历和删除边界三处生效。文件不存在视为空白名单；文件存在但读取失败时直接停止，不会静默忽略你写的保护项。
+- 已卸载软件残留只做只读报告，不提供自动删除。判定基于 60 天未修改、10 MB 下限、注册表与 Appx 已安装列表、规则已覆盖的厂商目录，属于启发式结果，需要你自行确认。
+- 清空回收站是独立命令，不在 `rules.json` 中，必须显式点击并二次确认；该操作不可恢复。
+- 系统级路径默认整体保护。新增的允许清单只放行两条已启用规则需要的子路径（字体缓存、Defender 扫描历史），`C:\Windows`、`C:\ProgramData`、Program Files 本身仍然禁止。
 - AWS、Azure、Kubernetes、Steam 规则与保护目录冲突，暂时禁用；Office 与 Zoom 的宽泛数据目录规则暂停，等待专项验证。GOG 的 ProgramData 日志目标已移除。**没有通过取消保护来启用规则。**
 - 旧 Go 分析器删除入口已关闭。旧 Mole CLI 不在正式清道夫便携包中，其余旧代码不等同于本次已验证的产品范围。
 
@@ -67,7 +70,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-portable
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\packaging\Test-PortableArchive.ps1 -ArchivePath <zip路径>
 ```
 
-打包校验覆盖完整 82 条规则 ID、11 条新增规则定义、VERSION、EXE 版本以及包内文件哈希。包内 `BUILD-MANIFEST.json` 记录源提交、规则集合、构建时间、验证方式与文件哈希。
+打包校验覆盖完整 99 条规则 ID、11 条 v1.1.0 新增规则定义、VERSION、EXE 版本以及包内文件哈希。包内 `BUILD-MANIFEST.json` 记录源提交、规则集合、构建时间、验证方式与文件哈希。
 
 发布流程使用同一个打包入口，自动生成草稿；核验 CI、实际附件和 SHA-256 后才公开发布。不再复用未经重建的 EXE，也不使用旧 `scripts/build-release.ps1` 发布清道夫。
 
