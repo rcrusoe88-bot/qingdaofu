@@ -353,65 +353,36 @@ function renderCleanFooter() {
 
 function renderAnalyze() {
     const scroll = $('analyzeScroll');
-    const lf = arr(scanResult && scanResult.LargeFiles);
     const orphanCandidates = arr(orphanResult && orphanResult.Candidates);
 
     const orphanButton = `<button class="btn ghost" data-action="scan-orphans" ${orphanState === 'scanning' ? 'disabled' : ''}>${esc(orphanState === 'scanning' ? (T.statusScanning || '') : (T.orphanScan || ''))}</button>`;
 
-    if (!scanResult && !orphanResult) {
+    if (!orphanResult) {
         scroll.innerHTML = `<div class="card empty">
-            <div class="empty-title">${esc(T.analyzeEmptyTitle || '')}</div>
-            <div>${esc(T.analyzeEmptySub || '')}</div>
-            <div class="empty-actions"><button class="btn primary" data-action="go-scan">${esc(T.goScan || '')}</button></div>
+            <div class="empty-title">${esc(T.orphanEmptyTitle || '还没有扫描')}</div>
+            <div>${esc(T.orphanEmptySub || '扫描 AppData 下可能属于已卸载软件的目录，只报告不删除。')}</div>
         </div>`;
         $('analyzeFooter').innerHTML = `<div class="footer-summary"></div>${orphanButton}`;
         return;
     }
 
-    let html = '';
-    if (scanResult) {
-        const max = lf.reduce((m, f) => Math.max(m, Number(f.Size) || 0), 0) || 1;
-        const total = lf.reduce((s, f) => s + (Number(f.Size) || 0), 0);
-        const rows = lf.length
-            ? lf.map((f) => `<div class="afile">
-                <div class="afile-path">${esc(f.Path)}</div>
-                <div class="afile-bar">
-                    <div class="bar"><i style="width:${Math.max(2, Math.round((Number(f.Size) || 0) / max * 100))}%"></i></div>
-                    <span class="afile-size">${esc(fmtSize(f.Size))}</span>
-                </div>
-            </div>`).join('')
-            : `<div class="empty"><div class="empty-title">${esc(T.noItems || '')}</div></div>`;
+    const orphanRows = orphanCandidates.length
+        ? orphanCandidates.map((c) => `<div class="afile">
+            <div class="afile-path">${esc(c.Path)}</div>
+            <div class="afile-bar">
+                <span class="afile-size">${esc(c.SizeText || fmtSize(c.Size))}${c.SizeComplete ? '' : ' +'}</span>
+            </div>
+        </div>`).join('')
+        : `<div class="empty"><div class="empty-title">${esc(T.orphanEmpty || '')}</div></div>`;
 
-        html += `<div class="hero">
-            <div class="hero-label">${esc(T.largeFilesHeading || '')}</div>
-            <div class="hero-value hero-sm">${esc(fmtSize(total))}</div>
-            <div class="hero-sub">${esc(T.analyzeTotal || '')} ${lf.length} ${esc(T.itemSuffix || '')} · ${esc(T.largeFilesDescription || '')}</div>
-        </div>
-        <div class="card"><div style="padding:6px 18px">${rows}</div></div>`;
-    }
+    scroll.innerHTML = `<div class="hero">
+        <div class="hero-label">${esc(T.orphanHeading || '')}</div>
+        <div class="hero-value hero-sm">${esc(orphanResult.TotalSizeText || fmtSize(orphanResult.TotalSize))}</div>
+        <div class="hero-sub">${esc(T.orphanTotal || '')} ${orphanCandidates.length} ${esc(T.itemSuffix || '')} · ${esc(T.orphanNote || '')}</div>
+    </div>
+    <div class="card"><div style="padding:6px 18px">${orphanRows}</div></div>`;
 
-    if (orphanResult) {
-        const orphanRows = orphanCandidates.length
-            ? orphanCandidates.map((c) => `<div class="afile">
-                <div class="afile-path">${esc(c.Path)}</div>
-                <div class="afile-bar">
-                    <span class="afile-size">${esc(c.SizeText || fmtSize(c.Size))}${c.SizeComplete ? '' : ' +'}</span>
-                </div>
-            </div>`).join('')
-            : `<div class="empty"><div class="empty-title">${esc(T.orphanEmpty || '')}</div></div>`;
-
-        html += `<div class="hero">
-            <div class="hero-label">${esc(T.orphanHeading || '')}</div>
-            <div class="hero-value hero-sm">${esc(orphanResult.TotalSizeText || fmtSize(orphanResult.TotalSize))}</div>
-            <div class="hero-sub">${esc(T.orphanTotal || '')} ${orphanCandidates.length} ${esc(T.itemSuffix || '')} · ${esc(T.orphanNote || '')}</div>
-        </div>
-        <div class="card"><div style="padding:6px 18px">${orphanRows}</div></div>`;
-    }
-
-    scroll.innerHTML = html;
-
-    $('analyzeFooter').innerHTML = `<div class="footer-summary"><span class="footer-note">${esc(T.scannedAt || '')} ${esc(fmtWhen((scanResult && scanResult.CompletedAt) || (orphanResult && orphanResult.ScannedAt)))}</span></div>
-        <button class="btn ghost" data-action="go-scan">${esc(T.refreshButton || '')}</button>
+    $('analyzeFooter').innerHTML = `<div class="footer-summary"><span class="footer-note">${esc(T.scannedAt || '')} ${esc(fmtWhen(orphanResult.ScannedAt))}</span></div>
         ${orphanButton}`;
 }
 

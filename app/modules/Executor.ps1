@@ -83,48 +83,99 @@ function Get-QdfFastPathDirectories {
         [int]$MinFiles = 64
     )
 
+    if ($Files.Count -lt $MinFiles) { return @() }
+
+    # Direct parent directories and the set of candidate paths, built once.
+    $dirSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     $candidatePaths = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $Files) { $null = $candidatePaths.Add([string]$file.Path) }
-
-    $tested = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $qualifying = @()
     foreach ($file in $Files) {
-        $filePath = [string]$file.Path
-        $dir = [System.IO.Path]::GetDirectoryName($filePath)
-        if ([string]::IsNullOrWhiteSpace($dir) -or $tested.Contains($dir)) { continue }
-        $null = $tested.Add($dir)
-        if ($candidatePaths.Contains($dir)) { continue }   # rule root itself: covered elsewhere
-
-        $liveCount = 0
-        foreach ($l in [System.IO.Directory]::EnumerateFiles($dir, '*', [System.IO.SearchOption]::AllDirectories)) { $liveCount++ }
-        if ($liveCount -lt $MinFiles) { continue }
-
-        $countUnder = 0
-        foreach ($f in $Files) {
-            if (Test-QdfPathUnder -Path ([string]$f.Path) -Directory $dir) { $countUnder++ }
-        }
-        if ($liveCount -ne $countUnder) { continue }
-
-        # Suppress descendants already queued (they sit inside this subtree, so
-        # counting them again would double-book bytes; the parent covers them).
-        $qualifying = @($qualifying | Where-Object { -not (Test-QdfPathUnder -Path ([string]$_) -Directory $dir) })
-        $qualifying += $dir
+        $path = [string]$file.Path
+        $null = $candidatePaths.Add($path)
+        $dir = [System.IO.Path]::GetDirectoryName($path)
+        if (-not [string]::IsNullOrWhiteSpace($dir)) { $null = $dirSet.Add($dir) }
     }
 
-    $picks = @()
-    foreach ($dir in $qualifying) {
-        $bytesUnder = 0L
-        $count = 0
-        foreach ($f in $Files) {
-            if (Test-QdfPathUnder -Path ([string]$f.Path) -Directory $dir) {
-                $bytesUnder += [long]$f.Size
-                $count++
+    # Candidate count and byte total per directory subtree, accumulated once
+    # along each file's ancestor chain. The previous version re-walked every
+    # file for every distinct directory — O(dirs x files) — so a 200k-file rule
+    # spent hours here before the first deletion.
+    $subtreeCount = New-Object 'System.Collections.Generic.Dictionary[string, int]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $subtreeBytes = New-Object 'System.Collections.Generic.Dictionary[string, long]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in $Files) {
+        $size = [long]$file.Size
+        $dir = [System.IO.Path]::GetDirectoryName([string]$file.Path)
+        while (-not [string]::IsNullOrWhiteSpace($dir)) {
+            if ($dirSet.Contains($dir)) {
+                if ($subtreeCount.ContainsKey($dir)) {
+                    $subtreeCount[$dir]++
+                    $subtreeBytes[$dir] += $size
+                }
+                else {
+                    $subtreeCount[$dir] = 1
+                    $subtreeBytes[$dir] = $size
+                }
+            }
+            $dir = [System.IO.Path]::GetDirectoryName($dir)
+        }
+    }
+
+    # The coverage walk can dominate on a huge tree (198k files took ~90 s), so
+    # it runs on a budget. Whatever was proven before the deadline is still
+    # safe to remove as a subtree; the rest falls back to per-file deletion.
+    $budget = [System.Diagnostics.Stopwatch]::StartNew()
+    $budgetSeconds = 15
+    # Largest subtrees first: a rule root that is fully covered is found on the
+    # first pass, and one directory delete then replaces hundreds of thousands
+    # of per-file deletes.
+    $ordered = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $subtreeCount.GetEnumerator()) {
+        if ([int]$entry.Value -ge $MinFiles) { $ordered.Add($entry) }
+    }
+    $ordered.Sort([System.Comparison[object]] { param($a, $b) ([int]$b.Value).CompareTo([int]$a.Value) })
+
+    $qualifying = New-Object System.Collections.Generic.List[object]
+    foreach ($entry in $ordered) {
+        if ($budget.Elapsed.TotalSeconds -ge $budgetSeconds) { break }
+        $dir = $entry.Key
+        $expected = [int]$entry.Value
+        if ($candidatePaths.Contains($dir)) { continue }   # the directory itself is a candidate
+
+        # Count live files, stopping the moment the count exceeds what was
+        # scanned: coverage can only fail from there, so the full walk is not
+        # needed. A walk that throws leaves coverage unproven.
+        $liveCount = 0
+        $complete = $true
+        try {
+            foreach ($unused in [System.IO.Directory]::EnumerateFiles($dir, '*', [System.IO.SearchOption]::AllDirectories)) {
+                $liveCount++
+                if ($liveCount -gt $expected) { break }
             }
         }
-        $picks += [pscustomobject]@{ Directory = $dir; Bytes = $bytesUnder; LiveCount = $count }
+        catch { $complete = $false }
+        if (-not $complete -or $liveCount -ne $expected) { continue }
+
+        $qualifying.Add([pscustomobject]@{
+            Directory = $dir
+            Bytes = [long]$subtreeBytes[$dir]
+            LiveCount = $expected
+        })
     }
-    # Shallow/deep order is irrelevant now that picks are disjoint.
-    return @($picks | Sort-Object -Property @{ Expression = 'Directory'; Descending = $true })
+
+    # Disjoint picks: a qualifying parent suppresses its qualifying descendants.
+    $picks = New-Object System.Collections.Generic.List[object]
+    foreach ($pick in @($qualifying | Sort-Object -Property @{ Expression = 'Directory'; Descending = $true })) {
+        $nested = $false
+        foreach ($existing in $picks) {
+            if (Test-QdfPathUnder -Path ([string]$pick.Directory) -Directory ([string]$existing.Directory)) {
+                $nested = $true
+                break
+            }
+        }
+        if (-not $nested) { $picks.Add($pick) }
+    }
+    # ToArray, not @($picks): PowerShell 5.1 throws "parameter type mismatch"
+    # when @() wraps a List[object] directly.
+    return $picks.ToArray()
 }
 
 function Save-QdfReceipt {
