@@ -14,7 +14,7 @@ Does NOT dot-source Gui*.ps1 (no WinForms dependency).
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('scan', 'clean', 'history', 'receipt', 'strings')]
+    [ValidateSet('scan', 'clean', 'history', 'receipt', 'strings', 'whitelist', 'orphans', 'recycle-bin')]
     [string]$Command,
 
     [string]$RulesPath = '',
@@ -89,6 +89,7 @@ try {
     . (Join-Path $script:QdfAppRoot 'modules\Core.ps1')
     . (Join-Path $script:QdfAppRoot 'modules\Scanner.ps1')
     . (Join-Path $script:QdfAppRoot 'modules\Executor.ps1')
+    . (Join-Path $script:QdfAppRoot 'modules\Maintenance.ps1')
 
     switch ($Command) {
         'strings' {
@@ -139,7 +140,8 @@ try {
                 $single = Invoke-QdfScan `
                     -RulesPath $script:QdfRulesPath `
                     -RuleIds @($id) `
-                    -SkipLargeFiles -MaxDetailsPerCategory 200
+                    -SkipLargeFiles -MaxDetailsPerCategory 200 `
+                    -CancelPath $CancelPath
                 @($single.Categories)
             })
 
@@ -153,7 +155,7 @@ try {
                     type = 'progress'; phase = 'scan'; ruleId = $id
                     ruleName = $name; index = $index; total = $total
                 }
-                $largeScan = Invoke-QdfScan -RulesPath $script:QdfRulesPath -RuleIds @($id)
+                $largeScan = Invoke-QdfScan -RulesPath $script:QdfRulesPath -RuleIds @($id) -CancelPath $CancelPath
                 $largeFiles = @($largeScan.LargeFiles)
                 $skipped = @($largeScan.Skipped)
             }
@@ -236,6 +238,39 @@ try {
                 throw "Receipt path is outside the receipts directory: $ReceiptPath"
             }
             Write-QdfCliLine -Object (Read-QdfJsonFile -Path $full)
+        }
+
+        'whitelist' {
+            $path = Get-QdfWhitelistPath
+            $exists = -not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path -PathType Leaf)
+            Write-QdfCliLine -Object @{
+                type = 'result'
+                Path = $path
+                Exists = $exists
+                Entries = @(Get-QdfWhitelistEntries)
+            }
+        }
+
+        'orphans' {
+            Write-QdfCliLine -Object @{
+                type = 'progress'; phase = 'orphans'; ruleId = 'orphans'
+                ruleName = '已卸载软件残留'; index = 1; total = 1
+            }
+            $scan = Invoke-QdfOrphanScan
+            $resultObject = @{ type = 'result' }
+            foreach ($property in $scan.PSObject.Properties) {
+                $resultObject[$property.Name] = $property.Value
+            }
+            Write-QdfCliLine -Object $resultObject
+        }
+
+        'recycle-bin' {
+            $bin = Clear-QdfRecycleBin -DryRun:$DryRun
+            $resultObject = @{ type = 'result' }
+            foreach ($property in $bin.PSObject.Properties) {
+                $resultObject[$property.Name] = $property.Value
+            }
+            Write-QdfCliLine -Object $resultObject
         }
     }
 }

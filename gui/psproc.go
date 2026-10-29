@@ -15,12 +15,15 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 var errKilled = errors.New("process cancelled by user")
+
+const cleanCancelGrace = 3 * time.Second
 
 type runner struct {
 	root      string
@@ -51,18 +54,50 @@ func (r *runner) reserve(command string) error {
 // Clean cancellation is cooperative; scans may be terminated because they never delete.
 func (r *runner) stop() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if !r.active {
+		r.mu.Unlock()
 		return nil
 	}
 	r.stopped = true
 	if r.command == "clean" {
-		return os.WriteFile(filepath.Join(r.cancelDir, "cancel"), []byte("stop"), 0600)
+		cancelPath := filepath.Join(r.cancelDir, "cancel")
+		cmd := r.cmd
+		err := os.WriteFile(cancelPath, []byte("stop"), 0600)
+		r.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		// Let the PowerShell core finish its current safe operation and persist
+		// the receipt. If it is stuck in a long synchronous filesystem call,
+		// force termination so the GUI cannot remain in "stopping" forever.
+		go r.forceStopAfterGrace(cmd)
+		return nil
 	}
 	if r.cmd != nil && r.cmd.Process != nil {
-		return r.cmd.Process.Kill()
+		err := r.cmd.Process.Kill()
+		r.mu.Unlock()
+		return err
 	}
+	r.mu.Unlock()
 	return nil
+}
+
+func (r *runner) forceStopAfterGrace(cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+	timer := time.NewTimer(cleanCancelGrace)
+	defer timer.Stop()
+	<-timer.C
+
+	r.mu.Lock()
+	stillActive := r.active && r.command == "clean" && r.stopped && r.cmd == cmd
+	r.mu.Unlock()
+	if stillActive && cmd.Process != nil {
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			log.Printf("forced clean termination: %v", err)
+		}
+	}
 }
 func (r *runner) release() {
 	r.mu.Lock()
@@ -135,7 +170,7 @@ func (r *runner) runReserved(command string, ids []string, dryRun bool, onLine f
 	r.mu.Lock()
 	stopped := r.stopped
 	r.mu.Unlock()
-	if stopped && command != "clean" {
+	if stopped {
 		return errKilled
 	}
 	if readErr != nil {

@@ -16,6 +16,9 @@
       live: true,
       scan: (ids) => bindings.Scan(ids || []),
       clean: (ids) => bindings.Clean(ids || []),
+      orphans: () => bindings.GetOrphans(),
+      emptyRecycleBin: () => bindings.EmptyRecycleBin(),
+      whitelist: () => bindings.GetWhitelist(),
       cancel: () => bindings.Cancel(),
       strings: () => bindings.GetStrings(),
       rules: () => bindings.GetRules(),
@@ -132,6 +135,21 @@
     ReceiptPath: 'C:\\Users\\wsj19\\AppData\\Local\\QingDaoFu\\receipts\\20260920-211500.json',
   };
 
+  const MOCK_ORPHANS = {
+    type: 'result',
+    ScannedAt: new Date().toISOString(),
+    MinAgeDays: 60,
+    MinSizeBytes: 10485760,
+    CandidateCount: 3,
+    TotalSize: 393.8 * MB,
+    TotalSizeText: '393.8 MB',
+    Candidates: [
+      { Path: 'C:\\Users\\wsj19\\AppData\\Local\\com.example.oldapp', Name: 'com.example.oldapp', Root: 'Local', Size: 249.1 * MB, SizeText: '249.1 MB', SizeComplete: true, LastModified: '2026-05-02T03:10:00.0000000Z' },
+      { Path: 'C:\\Users\\wsj19\\AppData\\Local\\OldTool', Name: 'OldTool', Root: 'Local', Size: 88.4 * MB, SizeText: '88.4 MB', SizeComplete: true, LastModified: '2026-04-18T11:00:00.0000000Z' },
+      { Path: 'C:\\Users\\wsj19\\AppData\\Roaming\\Legacy Editor', Name: 'Legacy Editor', Root: 'Roaming', Size: 56.3 * MB, SizeText: '56.3 MB', SizeComplete: false, LastModified: '2026-03-30T09:22:00.0000000Z' },
+    ],
+  };
+
   const MOCK_HISTORY = [
     { StartedAt: '2026-09-20T21:15:00+08:00', CompletedAt: new Date(Date.now() - 3600e3).toISOString(), DryRun: false,
       SelectedRuleIds: ['user-temp', 'chrome-cache', 'edge-cache'], SuccessfulCount: 2806, FailedCount: 6,
@@ -161,6 +179,18 @@
       return null;
     },
     clean: async () => { await sleep(900); emit('clean:done', MOCK_CLEAN); return null; },
+    orphans: async () => {
+      emit('orphans:progress', { type: 'progress', phase: 'orphans', index: 1, total: 1, ruleName: '已卸载软件残留' });
+      await sleep(500);
+      emit('orphans:done', MOCK_ORPHANS);
+      return null;
+    },
+    emptyRecycleBin: async () => {
+      await sleep(300);
+      emit('recycle-bin:done', { type: 'result', ItemCount: 12, TotalSize: 340 * MB, TotalSizeText: '340.0 MB', Emptied: true, DryRun: false, Error: '' });
+      return null;
+    },
+    whitelist: async () => ({ Path: 'C:\\Users\\wsj19\\AppData\\Local\\QingDaoFu\\whitelist.txt', Exists: true, Entries: ['C:\\Users\\wsj19\\AppData\\Local\\Temp\\keep'] }),
     cancel: async () => null,
     // Reuses the real strings file so the mock never drifts from production
     // copy. Requires the preview to be served from the repo root.

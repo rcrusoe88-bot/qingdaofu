@@ -18,7 +18,7 @@ try {
         $reader = New-Object System.IO.StreamReader($entries[$Name].Open(), [Text.Encoding]::UTF8)
         try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
     }
-    foreach ($name in @('QingDaoFu.exe','VERSION','README.md','RELEASE.md','BUILD-MANIFEST.json','app/modules/QdfCli.ps1','app/modules/PathSafety.ps1','app/modules/Executor.ps1','rules/rules.json')) {
+    foreach ($name in @('QingDaoFu.exe','VERSION','README.md','RELEASE.md','BUILD-MANIFEST.json','app/modules/QdfCli.ps1','app/modules/PathSafety.ps1','app/modules/Executor.ps1','app/modules/Maintenance.ps1','rules/rules.json')) {
         if (-not $entries.ContainsKey($name)) { throw "Missing package entry: $name" }
     }
     $manifest = Read-ArchiveText 'BUILD-MANIFEST.json' | ConvertFrom-Json
@@ -27,13 +27,15 @@ try {
     if ($version -ne $expectedVersion -or $manifest.Version -ne $version) { throw 'Package version does not match source VERSION.' }
     $rules = (Read-ArchiveText 'rules/rules.json' | ConvertFrom-Json).rules
     $baseline = [IO.File]::ReadAllText((Join-Path $projectRoot 'qdf-tests\fixtures\v1.1.0-rule-ids.json')) | ConvertFrom-Json
-    if (@($rules).Count -ne 82 -or @(Compare-Object @($baseline) @($rules.id)).Count -ne 0) { throw 'Package lost or changed the v1.1.0 rule ID set.' }
+    # The fixture holds the published rule ID set; count drift alone must not
+    # fail the check, but an added/missing/renamed ID is a packaging error.
+    if (@(Compare-Object @($baseline) @($rules.id)).Count -ne 0) { throw 'Package lost or changed the published rule ID set.' }
     $added = [IO.File]::ReadAllText((Join-Path $projectRoot 'qdf-tests\fixtures\v1.1.0-added-rules.json')) | ConvertFrom-Json
     foreach ($rule in $added) {
         $actual = @($rules | Where-Object { $_.id -eq $rule.id })
         if ($actual.Count -ne 1 -or ($actual[0] | ConvertTo-Json -Depth 12 -Compress) -cne ($rule | ConvertTo-Json -Depth 12 -Compress)) { throw "Published new rule regressed: $($rule.id)" }
     }
-    if ($manifest.RuleCount -ne 82 -or @(Compare-Object @($manifest.RuleIds) @($rules.id)).Count -ne 0) { throw 'Manifest rule set mismatch.' }
+    if ($manifest.RuleCount -ne @($rules).Count -or @(Compare-Object @($manifest.RuleIds) @($rules.id)).Count -ne 0) { throw 'Manifest rule set mismatch.' }
     if (@($manifest.Files).Count + 1 -ne $entries.Count) { throw 'Manifest does not cover the whole archive.' }
     foreach ($file in $manifest.Files) {
         if (-not $entries.ContainsKey($file.Path)) { throw "Manifest entry missing: $($file.Path)" }

@@ -1,5 +1,33 @@
 # 清道夫发布记录
 
+## v1.2.0 — 白名单、残留扫描与规则扩充
+
+发布日期：2026-10-29。
+
+### 规则
+
+- 从上游 Mole windows 分支（v1.39.0）移植 13 条清理规则：mise、Hex、Stack 临时文件、Opam、GitHub CLI、conda 临时文件、Cargo git 检出、Atom、Sublime LocalAppData、JetBrains Roaming、Google Drive 临时文件、Xbox Game Bar 录像、Fortnite 回放。规则总数 82 → 99。
+- 修复系统级规则永远无法命中的问题：新增系统允许清单，只放行 `FontCache` 与 Defender `Scans\History`、`Support` 两条已启用规则需要的子路径。`C:\Windows`、`C:\ProgramData`、Program Files 本身仍然禁止。
+- AWS、Azure、Kubernetes、Steam 四条规则保持禁用，未通过放宽保护来启用。
+
+### 新功能
+
+- **白名单**：`%LOCALAPPDATA%\QingDaoFu\whitelist.txt`，每行一个绝对路径，支持环境变量与 `#` 注释。在规则根解析、目录遍历和删除边界三处生效；文件存在但读取失败时停止。
+- **已卸载软件残留**：只读报告，60 天、10 MB 下限，结合注册表与 Appx 已安装列表、规则已覆盖的厂商目录做启发式判定。不提供自动删除。
+- **清空回收站**：独立命令，不在 `rules.json` 中，需显式点击并二次确认。
+
+### 修复
+
+- `Executor.ps1`、`Gui.Arcade.ps1` 补 UTF-8 BOM。此前在 en-US 的 CI runner 上按 Windows-1252 解码，中文字面量破坏字符串解析，导致 syntax 与 Pester 两个作业失败。
+- 新增编码测试：含中文却缺 BOM 的脚本会让测试失败。
+
+### 验证与产物
+
+- PowerShell 26 项、Go 后端、前端状态测试通过；`go vet` 与 Wails 构建通过。
+- 实际 ZIP 验证：99 条规则 ID、版本、完整文件清单与 SHA-256。
+- 下载：`qingdaofu-1.2.0-x64.zip` 与 `SHA256SUMS.txt`。
+- 未做：WinForms 回退界面未接入三项新功能，仅 Wails 主界面可用；真实用户缓存与全部第三方应用的人工验收未完成。
+
 ## v1.1.1 — 安全、回执与发布基线修复
 
 发布日期：2026-09-22。

@@ -82,5 +82,14 @@
   "heroPending": "另有",
   "heroPendingSuffix": "待确认",
   "heroTotalFreed": "累计释放",
-  "otherCategory": "其他"
+  "otherCategory": "其他",
+  "orphanScan": "扫描已卸载残留",
+  "orphanHeading": "已卸载软件残留",
+  "orphanEmpty": "没有发现明显的已卸载软件残留",
+  "orphanNote": "仅供参考，不会自动删除",
+  "orphanTotal": "共",
+  "emptyRecycleBin": "清空回收站",
+  "emptyRecycleBinConfirm": "回收站里的文件将被永久删除，无法恢复。确定清空吗？",
+  "emptyRecycleBinDone": "回收站已清空",
+  "whitelistButton": "白名单"
 }

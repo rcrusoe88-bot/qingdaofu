@@ -162,6 +162,124 @@ Describe 'QingDaoFu executor' {
             Remove-QdfTestFixture -Fixture $fixture
         }
     }
+
+    It 'fast-path deletes a fully covered subtree once' {
+        $fixture = New-QdfTestFixture
+        try {
+            # 64+ deletable files so the fast path qualifies, plus nested dirs.
+            $treeRoot = Join-Path $fixture.CacheRoot 'tree'
+            New-Item -ItemType Directory -Path (Join-Path $treeRoot 'a\b') -Force | Out-Null
+            for ($i = 0; $i -lt 70; $i++) {
+                Set-Content -LiteralPath (Join-Path $treeRoot "a\b\f$i.tmp") -Value ('x' * 64) -Encoding ASCII
+                (Get-Item -LiteralPath (Join-Path $treeRoot "a\b\f$i.tmp")).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-10)
+            }
+            # A too-new file inside the tree must block coverage and survive.
+            $protected = Join-Path $treeRoot 'a\b\new.tmp'
+            Set-Content -LiteralPath $protected -Value 'keep' -Encoding ASCII
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            Test-Path -LiteralPath $protected | Should Be $true
+            @(Get-ChildItem -LiteralPath (Join-Path $treeRoot 'a\b') -Filter 'f*.tmp').Count | Should Be 0
+            $result.ReceiptPath | Should Not BeNullOrEmpty
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+}
+
+Describe 'QingDaoFu script encoding' {
+    It 'uses a UTF-8 BOM for every script containing Chinese' {
+        # PowerShell 5.1 reads a BOM-less script with the system ANSI code page.
+        # A UTF-8 file with Chinese literals then turns to mojibake on an en-US
+        # runner and fails to parse, which is exactly how CI broke Executor.ps1.
+        $offenders = @()
+        foreach ($root in @('app', 'qdf-tests', 'packaging', 'scripts')) {
+            $dir = Join-Path $projectRoot $root
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
+            foreach ($file in @(Get-ChildItem -LiteralPath $dir -Recurse -Filter '*.ps1' -File)) {
+                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { continue }
+                $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($text -match '[\u4e00-\u9fff]') { $offenders += $file.FullName }
+            }
+        }
+        $offenders.Count | Should Be 0
+        if ($offenders.Count -gt 0) { Write-Host ($offenders -join "`n") }
+    }
+}
+
+Describe 'QingDaoFu whitelist' {
+    It 'skips whitelisted paths during scanning' {
+        $fixture = New-QdfTestFixture
+        $originalDataRoot = $script:QdfDataRoot
+        try {
+            $script:QdfDataRoot = $fixture.Root
+            [System.IO.File]::WriteAllText(
+                (Join-Path $fixture.Root 'whitelist.txt'),
+                $fixture.OldFile,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+
+            $scan = Invoke-QdfScan -RulesPath $fixture.RulesPath -SkipLargeFiles -MaxDetailsPerCategory -1
+            @($scan.Categories[0].Files).Count | Should Be 0
+            @($scan.Skipped | Where-Object { $_.Reason -eq 'Whitelisted.' }).Count | Should BeGreaterThan 0
+        }
+        finally {
+            $script:QdfDataRoot = $originalDataRoot
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'refuses a candidate that a later whitelist covers' {
+        $fixture = New-QdfTestFixture
+        $originalDataRoot = $script:QdfDataRoot
+        try {
+            $scan = Invoke-QdfScan -RulesPath $fixture.RulesPath -SkipLargeFiles -MaxDetailsPerCategory -1
+            @($scan.Categories[0].Files).Count | Should Be 1
+
+            $script:QdfDataRoot = $fixture.Root
+            [System.IO.File]::WriteAllText(
+                (Join-Path $fixture.Root 'whitelist.txt'),
+                $fixture.OldFile,
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+
+            $rule = (Read-QdfJsonFile -Path $fixture.RulesPath).rules[0]
+            Test-QdfCandidatePath -Path $fixture.OldFile -Rule $rule | Should Be $false
+        }
+        finally {
+            $script:QdfDataRoot = $originalDataRoot
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+}
+
+Describe 'QingDaoFu orphan scan helpers' {
+    It 'treats a folder as installed when its name overlaps an app name' {
+        $names = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        $null = $names.Add('Google Chrome')
+        Test-QdfOrphanNameInstalled -FolderName 'Chrome' -InstalledNames $names | Should Be $true
+        Test-QdfOrphanNameInstalled -FolderName 'TotallyDifferent' -InstalledNames $names | Should Be $false
+
+        # Containment is only trusted once the shorter side has 4+ characters.
+        $short = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        $null = $short.Add('Foo')
+        Test-QdfOrphanNameInstalled -FolderName 'Foo' -InstalledNames $short | Should Be $true
+        Test-QdfOrphanNameInstalled -FolderName 'Foobar' -InstalledNames $short | Should Be $false
+    }
+
+    It 'never reports folders owned by a shipped rule' {
+        $names = Get-QdfRuleAppNames
+        $names.Contains('Google') | Should Be $true
+        $names.Contains('discord') | Should Be $true
+        $names.Contains('Tencent') | Should Be $true
+    }
 }
 
 Describe 'QingDaoFu safety regressions' {
@@ -263,11 +381,11 @@ Describe 'QingDaoFu failure boundaries' {
 }
 
 Describe 'Published v1.1.0 baseline and release version' {
-    It 'preserves all 82 published rule IDs without duplicates' {
+    It 'preserves all 99 published rule IDs without duplicates' {
         $rules = (Read-QdfJsonFile (Join-Path $projectRoot 'rules\rules.json')).rules
         $ids = Read-QdfJsonFile (Join-Path $PSScriptRoot 'fixtures\v1.1.0-rule-ids.json')
-        @($rules).Count | Should Be 82
-        @($rules.id | Select-Object -Unique).Count | Should Be 82
+        @($rules).Count | Should Be 99
+        @($rules.id | Select-Object -Unique).Count | Should Be 99
         @(Compare-Object @($ids) @($rules.id)).Count | Should Be 0
     }
     It 'preserves the complete definitions of the eleven new published rules' {

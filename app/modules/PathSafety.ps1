@@ -52,6 +52,31 @@ public sealed class QdfPathLease : IDisposable {
         }
     }
     public void Dispose() { for (int i=handles.Count-1; i>=0; --i) handles[i].Dispose(); handles.Clear(); }
+
+    // Fast path: the executor only calls this after confirming every file inside
+    // the subtree was a scanned candidate, so the whole subtree can be removed with
+    // a single recursive delete. Nested directories are fine; a reparse point is not
+    // (it could relocate deletion outside the verified boundary), so bail on one.
+    static SafeFileHandle OpenPath(string path) {
+        var handle = CreateFile(path, 0x10080, 1, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+        Inspect(handle);
+        return handle;
+    }
+    static void RejectReparseSubtree(string directory) {
+        foreach (var entry in new System.IO.DirectoryInfo(directory).EnumerateFileSystemInfos()) {
+            if (((uint)entry.Attributes & 0x400u) != 0) throw new IOException("Subtree contains a reparse point.");
+            string fullPath = System.IO.Path.Combine(directory, entry.Name);
+            using (OpenPath(fullPath)) { }
+            if (((uint)entry.Attributes & 0x10u) != 0) RejectReparseSubtree(fullPath);
+        }
+    }
+    public static void DeleteDirectoryVerified(string directory) {
+        var lease = new QdfPathLease(directory);
+        using (lease) {
+            RejectReparseSubtree(directory);
+            System.IO.Directory.Delete(directory, true);
+        }
+    }
 }
 '@
 }

@@ -1,4 +1,4 @@
-function Get-QdfCategoryById {
+﻿function Get-QdfCategoryById {
     param(
         [Parameter(Mandatory = $true)]
         [object[]]$Categories,
