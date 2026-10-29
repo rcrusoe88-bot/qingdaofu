@@ -58,12 +58,34 @@ jobs:
         with:
           name: QingDaoFu-Portable
           path: portable
+      # RELEASE.md keeps every version. Publishing the whole file made each
+      # release repeat all older sections, so cut out this tag's section.
+      - name: Extract this tag's section from RELEASE.md
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          tag = os.environ['GITHUB_REF'].split('/')[-1]
+          version = tag[1:] if tag.startswith('v') else tag
+          with open('RELEASE.md', encoding='utf-8') as fh:
+              text = fh.read()
+          start = re.search(r'^## v' + re.escape(version) + r'(?=\s|$).*$', text, re.M)
+          if not start:
+              print(f'RELEASE.md has no section for {tag}', file=sys.stderr)
+              sys.exit(1)
+          rest = text[start.end():]
+          nxt = re.search(r'^## v', rest, re.M)
+          section = text[start.start():start.end() + (nxt.start() if nxt else len(rest))]
+          with open('release-notes.md', 'w', encoding='utf-8') as fh:
+              fh.write(section.rstrip() + '\n')
+          print(f'Extracted {len(section)} chars for {tag}')
+          PY
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           files: |
             portable/**/*.zip
             portable/**/SHA256SUMS.txt
-          body_path: RELEASE.md
+          body_path: release-notes.md
           fail_on_unmatched_files: true
           draft: true
           prerelease: false
