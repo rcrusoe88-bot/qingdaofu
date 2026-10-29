@@ -1,4 +1,4 @@
-function Move-QdfFileToRecycleBin {
+﻿function Move-QdfFileToRecycleBin {
     param([Parameter(Mandatory = $true)][string]$Path)
     Add-Type -AssemblyName Microsoft.VisualBasic
     [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(

@@ -193,6 +193,27 @@ Describe 'QingDaoFu executor' {
     }
 }
 
+Describe 'QingDaoFu script encoding' {
+    It 'uses a UTF-8 BOM for every script containing Chinese' {
+        # PowerShell 5.1 reads a BOM-less script with the system ANSI code page.
+        # A UTF-8 file with Chinese literals then turns to mojibake on an en-US
+        # runner and fails to parse, which is exactly how CI broke Executor.ps1.
+        $offenders = @()
+        foreach ($root in @('app', 'qdf-tests', 'packaging', 'scripts')) {
+            $dir = Join-Path $projectRoot $root
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
+            foreach ($file in @(Get-ChildItem -LiteralPath $dir -Recurse -Filter '*.ps1' -File)) {
+                $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+                if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { continue }
+                $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($text -match '[\u4e00-\u9fff]') { $offenders += $file.FullName }
+            }
+        }
+        $offenders.Count | Should Be 0
+        if ($offenders.Count -gt 0) { Write-Host ($offenders -join "`n") }
+    }
+}
+
 Describe 'QingDaoFu whitelist' {
     It 'skips whitelisted paths during scanning' {
         $fixture = New-QdfTestFixture
