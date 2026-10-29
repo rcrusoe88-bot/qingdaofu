@@ -108,7 +108,9 @@ function Invoke-QdfScan {
 
         [int]$MaxDetailsPerCategory = 5000,
 
-        [switch]$SkipLargeFiles
+        [switch]$SkipLargeFiles,
+
+        [string]$CancelPath = ''
     )
 
     $startedAt = [datetime]::UtcNow
@@ -142,9 +144,18 @@ function Invoke-QdfScan {
         $totalSize = 0L
 
         foreach ($root in $roots) {
-            $matchedFiles = @(Get-QdfFilesFromRoot -Root $root -Rule $rule -CutoffUtc $cutoffUtc -SkippedItems $skippedItems)
+            if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { throw 'Scan cancelled.' }
+            $matchedFiles = @(Get-QdfFilesFromRoot -Root $root -Rule $rule -CutoffUtc $cutoffUtc -SkippedItems $skippedItems -CancelPath $CancelPath)
             foreach ($file in $matchedFiles) {
-                $candidate = New-QdfFileCandidate -File $file
+                # Inlined candidate build (vs New-QdfFileCandidate): this loop
+                # runs once per scanned file, and PowerShell function-call plus
+                # pipeline overhead dominates for caches with 100k+ entries.
+                $candidate = [pscustomobject]@{
+                    Path = $file.FullName
+                    Name = $file.Name
+                    Size = [long]$file.Length
+                    LastWriteTimeUtc = $file.LastWriteTimeUtc.ToString('o')
+                }
 
                 if ($kind -eq 'large-files') {
                     $threshold = [long](Get-QdfPropertyValue -Object $ruleset -Name 'largeFileThresholdBytes' -DefaultValue 1073741824)

@@ -94,6 +94,63 @@ func (a *App) launch(command string) error {
 	return a.ps.reserve(command)
 }
 
+// GetOrphans scans AppData for folders that no installed program appears to
+// own. Read-only: the result is a report, never a deletion plan. Streams
+// orphans:progress / orphans:done / app:error.
+func (a *App) GetOrphans() error {
+	if err := a.launch("orphans"); err != nil {
+		return err
+	}
+	go a.runStream("orphans", nil, false)
+	return nil
+}
+
+// EmptyRecycleBin empties the Recycle Bin. Irreversible, so the frontend
+// confirms first; it is never reachable from a rules.json selection.
+// Streams recycle-bin:done / app:error.
+func (a *App) EmptyRecycleBin() error {
+	if err := a.launch("recycle-bin"); err != nil {
+		return err
+	}
+	go a.runStream("recycle-bin", nil, false)
+	return nil
+}
+
+// GetWhitelist returns the whitelist path and its parsed entries. Synchronous:
+// the file is tiny and the answer is needed before the pane renders.
+func (a *App) GetWhitelist() (map[string]interface{}, error) {
+	var result map[string]interface{}
+	var coreError string
+	err := a.ps.run("whitelist", nil, false, func(line []byte) {
+		var ev struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(line, &ev) != nil {
+			return
+		}
+		switch ev.Type {
+		case "result":
+			var m map[string]interface{}
+			if json.Unmarshal(line, &m) == nil {
+				result = m
+			}
+		case "error":
+			coreError = ev.Message
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if coreError != "" {
+		return nil, errors.New(coreError)
+	}
+	if result == nil {
+		return nil, errors.New("核心组件没有返回白名单")
+	}
+	return result, nil
+}
+
 func (a *App) beforeClose(ctx context.Context) bool {
 	if a.ps == nil || !a.ps.busy() {
 		return false
@@ -234,6 +291,20 @@ func (a *App) OpenPath(target string) error {
 	switch target {
 	case "recyclebin":
 		arg = "shell:RecycleBinFolder"
+	case "whitelist":
+		// Created on first open so the user has a file to edit; the core
+		// treats a missing file as an empty whitelist.
+		path := filepath.Join(dataRoot(), "whitelist.txt")
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.MkdirAll(dataRoot(), 0o755); err != nil {
+				return err
+			}
+			content := "# 清道夫白名单：每行一个路径，命中的文件不会被清理。\r\n# 支持 %LOCALAPPDATA% 这类环境变量；# 开头的行是注释。\r\n"
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				return err
+			}
+		}
+		arg = path
 	case "logs", "receipts":
 		dir := filepath.Join(dataRoot(), target)
 		if st, err := os.Stat(dir); err != nil || !st.IsDir() {

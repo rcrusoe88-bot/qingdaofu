@@ -1640,6 +1640,318 @@
       ],
       "recurse": true,
       "minAgeDays": 0
+    },
+    {
+      "id": "sys-font-cache",
+      "category": "系统与用户项",
+      "name": "Windows 字体缓存",
+      "description": "Windows 的字体缓存，系统会自动重建。主要释放服务账号下的字体缓存目录。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%WinDir%\\ServiceProfiles\\LocalService\\AppData\\Local\\FontCache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "browser-edge-update",
+      "category": "浏览器",
+      "name": "Edge 更新安装包与日志",
+      "description": "Edge 更新器下载的安装包和更新日志，删掉后下次更新会重新下载。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "delete",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Microsoft\\EdgeUpdate\\Download"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 30
+    },
+    {
+      "id": "browser-chrome-update",
+      "category": "浏览器",
+      "name": "Chrome 更新安装包",
+      "description": "Chrome 更新器下载的安装包，删掉后下次更新会重新下载。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "delete",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Google\\Update\\Download"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 30
+    },
+    {
+      "id": "sys-defender-history",
+      "category": "系统与用户项",
+      "name": "Defender 扫描历史",
+      "description": "Windows Defender 的病毒扫描历史与支持日志，系统会自动重建。只清理扫描历史，不碰隔离区。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "delete",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%ProgramData%\\Microsoft\\Windows Defender\\Scans\\History",
+        "%ProgramData%\\Microsoft\\Windows Defender\\Support"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-mise",
+      "category": "开发缓存",
+      "name": "mise 版本管理器缓存",
+      "description": "mise 下载的运行时与工具缓存，删除后会在下次安装或切换版本时重新下载。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\mise\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-hex",
+      "category": "开发缓存",
+      "name": "Elixir Hex 包缓存",
+      "description": "Elixir Hex 包管理器的下载缓存，删除后会在下次拉取依赖时重新下载。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.hex\\cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-stack-tmp",
+      "category": "开发缓存",
+      "name": "Haskell Stack 临时文件",
+      "description": "Stack 快照目录中 7 天前遗留的 .tmp 临时文件，只删临时文件，已安装的快照与包不受影响。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.stack\\snapshots"
+      ],
+      "filePatterns": [
+        "*.tmp"
+      ],
+      "recurse": true,
+      "minAgeDays": 7
+    },
+    {
+      "id": "dev-opam",
+      "category": "开发缓存",
+      "name": "OCaml Opam 下载缓存",
+      "description": "Opam 下载的包归档缓存，删除后会在下次构建时重新下载。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.opam\\download-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-gh-cli",
+      "category": "开发缓存",
+      "name": "GitHub CLI 缓存",
+      "description": "gh 命令 7 天前生成的 JSON 缓存文件，不涉及 hosts.yml 等登录与配置文件。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\GitHub CLI"
+      ],
+      "filePatterns": [
+        "*.json"
+      ],
+      "recurse": false,
+      "minAgeDays": 7
+    },
+    {
+      "id": "dev-conda-tmp",
+      "category": "开发缓存",
+      "name": "conda 临时文件",
+      "description": "conda 包目录中 7 天前遗留的 .tmp 临时文件，已下载的包不受影响。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.conda\\pkgs",
+        "%USERPROFILE%\\anaconda3\\pkgs",
+        "%USERPROFILE%\\miniconda3\\pkgs"
+      ],
+      "filePatterns": [
+        "*.tmp"
+      ],
+      "recurse": false,
+      "minAgeDays": 7
+    },
+    {
+      "id": "dev-cargo-git",
+      "category": "开发缓存",
+      "name": "Cargo git 依赖缓存",
+      "description": "Cargo 从 git 拉取的依赖检出，删除后会在下次构建时重新拉取。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%USERPROFILE%\\.cargo\\git\\checkouts"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-atom",
+      "category": "开发缓存",
+      "name": "Atom 编译缓存",
+      "description": "Atom 编辑器的编译缓存，删除后会在下次启动时重建。Atom 已停止维护，通常只清理旧安装残留。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\.atom\\compile-cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-sublime-local",
+      "category": "开发缓存",
+      "name": "Sublime Text 本地缓存",
+      "description": "Sublime Text 在 LocalAppData 下的缓存目录，删除后会在下次启动时重建。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Sublime Text\\Cache"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "dev-jetbrains-roaming",
+      "category": "开发缓存",
+      "name": "JetBrains Roaming 索引缓存",
+      "description": "JetBrains 各 IDE 在 Roaming 下的缓存与索引目录，删除后会在下次打开项目时重建索引。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%APPDATA%\\JetBrains\\*\\caches",
+        "%APPDATA%\\JetBrains\\*\\index",
+        "%APPDATA%\\JetBrains\\*\\tmp"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 0
+    },
+    {
+      "id": "sync-gdrive-tmp",
+      "category": "云同步",
+      "name": "Google Drive 临时文件",
+      "description": "Google Drive 同步目录中 7 天前遗留的 .tmp 临时文件。",
+      "kind": "cleanup",
+      "risk": "safe",
+      "action": "delete",
+      "defaultSelected": true,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Google\\DriveFS"
+      ],
+      "filePatterns": [
+        "*.tmp"
+      ],
+      "recurse": false,
+      "minAgeDays": 7
+    },
+    {
+      "id": "media-game-dvr",
+      "category": "录屏与截图",
+      "name": "Xbox Game Bar 录像",
+      "description": "Xbox Game Bar 自动保存的 90 天前录像与截图，删除后放入回收站，可随时恢复。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\Packages\\Microsoft.XboxGamingOverlay_*\\LocalState\\GameDVR"
+      ],
+      "filePatterns": [
+        "*.mp4",
+        "*.png"
+      ],
+      "recurse": true,
+      "minAgeDays": 90
+    },
+    {
+      "id": "media-fortnite-replay",
+      "category": "录屏与截图",
+      "name": "Fortnite 回放文件",
+      "description": "Fortnite 保存的 90 天前对局回放，删除后放入回收站，可随时恢复。",
+      "kind": "cleanup",
+      "risk": "careful",
+      "action": "recycle",
+      "defaultSelected": false,
+      "pathTemplates": [
+        "%LOCALAPPDATA%\\FortniteGame\\Saved\\Demos"
+      ],
+      "filePatterns": [
+        "*"
+      ],
+      "recurse": true,
+      "minAgeDays": 90
     }
   ]
 }

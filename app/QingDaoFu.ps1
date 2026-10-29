@@ -24,5 +24,6 @@ else {
 . (Join-Path $script:QdfAppRoot 'modules\Core.ps1')
 . (Join-Path $script:QdfAppRoot 'modules\Scanner.ps1')
 . (Join-Path $script:QdfAppRoot 'modules\Executor.ps1')
+. (Join-Path $script:QdfAppRoot 'modules\Maintenance.ps1')
 . (Join-Path $script:QdfAppRoot 'modules\Gui.ps1')
 . (Join-Path $script:QdfAppRoot 'modules\Gui.Arcade.ps1')

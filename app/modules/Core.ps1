@@ -3,6 +3,9 @@ $script:QdfUiStrings = $null
 $script:QdfProtectedExactPathCache = $null
 $script:QdfProtectedPrefixPathCache = $null
 $script:QdfProtectedLeafNameCache = $null
+$script:QdfSystemAllowedPathCache = $null
+$script:QdfWhitelistCache = $null
+$script:QdfWhitelistStamp = $null
 
 function Get-QdfPropertyValue {
     param(
@@ -259,6 +262,45 @@ function Get-QdfProtectedPrefixPaths {
     return $script:QdfProtectedPrefixPathCache
 }
 
+# The prefix protection above blocks every descendant of %SystemRoot%,
+# %ProgramData%, Program Files and the credential dirs. A cleanup rule rooted
+# there silently resolves to zero files — six shipped rules were dead this way.
+# This list re-opens only the exact subpaths a rule needs, each backed by an
+# upstream Mole cleanup routine. Add an entry only with that evidence, and
+# never widen one to a bare drive/Windows/ProgramData root.
+function Get-QdfSystemAllowedPaths {
+    if ($null -ne $script:QdfSystemAllowedPathCache) {
+        return $script:QdfSystemAllowedPathCache
+    }
+
+    $paths = New-Object System.Collections.Generic.List[string]
+    $add = {
+        param([string]$Path)
+        if ([string]::IsNullOrWhiteSpace($Path)) { return }
+        $normalized = Get-QdfNormalizedPath -Path $Path
+        if (-not [string]::IsNullOrWhiteSpace($normalized)) { $null = $paths.Add($normalized) }
+    }
+
+    # Only paths that an *enabled* rule actually roots on belong here. The
+    # four disabled rules (dev-aws/dev-azure/dev-kube/game-steam) stay blocked
+    # on purpose: their disabledReason says the boundary was never opened.
+    if (-not [string]::IsNullOrWhiteSpace($env:SystemRoot)) {
+        $null = & $add (Join-Path $env:SystemRoot 'ServiceProfiles\LocalService\AppData\Local\FontCache')
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:ProgramData)) {
+        foreach ($relative in @(
+                'Microsoft\Windows Defender\Scans\History',
+                'Microsoft\Windows Defender\Support'
+            )) {
+            $null = & $add (Join-Path $env:ProgramData $relative)
+        }
+    }
+
+    $script:QdfSystemAllowedPathCache = @($paths | Select-Object -Unique)
+    return $script:QdfSystemAllowedPathCache
+}
+
 function Test-QdfProtectedNormalizedPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -267,6 +309,14 @@ function Test-QdfProtectedNormalizedPath {
 
     if ([string]::IsNullOrWhiteSpace($NormalizedPath)) {
         return $true
+    }
+
+    # Checked before the protected lists: an allow-listed subpath must win over
+    # the broader prefix it sits under, or the rule rooted there stays dead.
+    foreach ($allowedPath in (Get-QdfSystemAllowedPaths)) {
+        if (Test-QdfNormalizedPathEqualOrChild -NormalizedPath $NormalizedPath -NormalizedParentPath $allowedPath) {
+            return $false
+        }
     }
 
     foreach ($exactPath in (Get-QdfProtectedExactPaths)) {
@@ -301,6 +351,70 @@ function Test-QdfProtectedPath {
 
     $normalized = Get-QdfNormalizedPath -Path $Path
     return (Test-QdfProtectedNormalizedPath -NormalizedPath $normalized)
+}
+
+function Get-QdfWhitelistPath {
+    if ([string]::IsNullOrWhiteSpace($script:QdfDataRoot)) {
+        return ''
+    }
+    return (Join-Path $script:QdfDataRoot 'whitelist.txt')
+}
+
+# One entry per line; blank lines and # comments are ignored. A missing file
+# means "nothing protected", but an unreadable one throws: silently dropping a
+# whitelist the user wrote would delete what they asked to keep.
+function Get-QdfWhitelistEntries {
+    $path = Get-QdfWhitelistPath
+    if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        $script:QdfWhitelistCache = @()
+        $script:QdfWhitelistStamp = $null
+        return $script:QdfWhitelistCache
+    }
+
+    # Keyed by path *and* timestamp: tests (and a moved data root) can point at
+    # a different file whose mtime happens to match the cached one.
+    $stamp = $path + '|' + (Get-Item -LiteralPath $path -Force).LastWriteTimeUtc.Ticks
+    if ($null -ne $script:QdfWhitelistCache -and $script:QdfWhitelistStamp -eq $stamp) {
+        return $script:QdfWhitelistCache
+    }
+
+    $lines = [System.IO.File]::ReadAllLines($path, [System.Text.Encoding]::UTF8)
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith('#')) { continue }
+        $expanded = [Environment]::ExpandEnvironmentVariables($trimmed)
+        # A relative entry would resolve against the process CWD and protect
+        # something the user never named.
+        if (-not [System.IO.Path]::IsPathRooted($expanded)) { continue }
+        $normalized = Get-QdfNormalizedPath -Path $expanded
+        if (-not [string]::IsNullOrWhiteSpace($normalized)) { $null = $entries.Add($normalized) }
+    }
+
+    $script:QdfWhitelistCache = $entries.ToArray()
+    $script:QdfWhitelistStamp = $stamp
+    return $script:QdfWhitelistCache
+}
+
+function Test-QdfWhitelistedNormalized {
+    param([Parameter(Mandatory = $true)][string]$NormalizedPath)
+
+    if ([string]::IsNullOrWhiteSpace($NormalizedPath)) { return $false }
+    foreach ($entry in (Get-QdfWhitelistEntries)) {
+        if (Test-QdfNormalizedPathEqualOrChild -NormalizedPath $NormalizedPath -NormalizedParentPath $entry) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-QdfWhitelisted {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    # @() keeps an empty whitelist from collapsing to $null under StrictMode.
+    if (@(Get-QdfWhitelistEntries).Count -eq 0) { return $false }
+    $normalized = Get-QdfNormalizedPath -Path $Path
+    return (Test-QdfWhitelistedNormalized -NormalizedPath $normalized)
 }
 
 function Resolve-QdfRuleRoots {
@@ -351,6 +465,16 @@ function Resolve-QdfRuleRoots {
                 continue
             }
 
+            if (Test-QdfWhitelisted -Path $item.FullName) {
+                if ($null -ne $SkippedItems) {
+                    $SkippedItems.Add([pscustomobject]@{
+                        Path = $item.FullName
+                        Reason = 'Whitelisted.'
+                    })
+                }
+                continue
+            }
+
             $roots.Add($item)
         }
     }
@@ -392,80 +516,137 @@ function Get-QdfFilesFromRoot {
 
         [Parameter(Mandatory = $true)]
         [AllowEmptyCollection()]
-        [System.Collections.Generic.List[object]]$SkippedItems
+        [System.Collections.Generic.List[object]]$SkippedItems,
+
+        [string]$CancelPath = ''
     )
 
     $recurse = [bool](Get-QdfPropertyValue -Object $Rule -Name 'recurse' -DefaultValue $false)
     $patterns = @(Get-QdfPropertyValue -Object $Rule -Name 'filePatterns' -DefaultValue @('*'))
     $results = New-Object System.Collections.Generic.List[object]
-    $queue = New-Object System.Collections.Generic.Queue[System.IO.FileSystemInfo]
-    $queue.Enqueue($Root)
+    # An empty whitelist is the common case: skip per-entry normalization then.
+    $whitelistActive = @(Get-QdfWhitelistEntries).Count -gt 0
+    $queue = New-Object System.Collections.Generic.Queue[string]
+    $rootPath = [string]$Root.FullName
+    $queue.Enqueue($rootPath)
+    $visited = 0
 
     while ($queue.Count -gt 0) {
-        $current = $queue.Dequeue()
-        if (-not (Test-QdfPathChain -Path $current.FullName)) { continue }
+        if ($CancelPath -and (($visited++ -band 255) -eq 0) -and [System.IO.File]::Exists($CancelPath)) {
+            throw 'Scan cancelled.'
+        }
 
-        if ($current.PSIsContainer) {
-            $children = @()
+        $currentPath = $queue.Dequeue()
+        try {
+            $currentAttributes = [System.IO.File]::GetAttributes($currentPath)
+        }
+        catch {
+            $SkippedItems.Add([pscustomobject]@{ Path = $currentPath; Reason = $_.Exception.Message })
+            continue
+        }
+
+        if (($currentAttributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            $SkippedItems.Add([pscustomobject]@{ Path = $currentPath; Reason = 'Reparse points are not scanned.' })
+            continue
+        }
+
+        $isDirectory = ($currentAttributes -band [System.IO.FileAttributes]::Directory) -ne 0
+        if ($isDirectory) {
+            $children = $null
             try {
-                $children = @(Get-ChildItem -LiteralPath $current.FullName -Force -ErrorAction Stop)
-            }
-            catch {
-                $SkippedItems.Add([pscustomobject]@{
-                    Path = $current.FullName
-                    Reason = $_.Exception.Message
-                })
-                continue
-            }
+                # Directory.EnumerateFileSystemEntries avoids materializing a
+                # PowerShell FileInfo object for every child in large caches.
+                $children = [System.IO.Directory]::EnumerateFileSystemEntries($currentPath)
+                foreach ($childPath in $children) {
+                    if ($CancelPath -and (($visited++ -band 255) -eq 0) -and [System.IO.File]::Exists($CancelPath)) {
+                        throw 'Scan cancelled.'
+                    }
 
-            foreach ($child in $children) {
-                if (Test-QdfReparsePoint -Item $child) {
+                    try {
+                        $attributes = [System.IO.File]::GetAttributes($childPath)
+                    }
+                    catch {
+                        $SkippedItems.Add([pscustomobject]@{ Path = $childPath; Reason = $_.Exception.Message })
+                        continue
+                    }
+
+                    # Checked before the directory branch: a whitelisted
+                    # directory must not be queued, or its children are scanned.
+                    if ($whitelistActive -and
+                        (Test-QdfWhitelistedNormalized -NormalizedPath (Get-QdfNormalizedPath -Path $childPath))) {
+                        $SkippedItems.Add([pscustomobject]@{ Path = $childPath; Reason = 'Whitelisted.' })
+                        continue
+                    }
+
+                    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
                     $SkippedItems.Add([pscustomobject]@{
-                        Path = $child.FullName
+                        Path = $childPath
                         Reason = 'Reparse points are not scanned.'
                     })
-                    continue
+                        continue
                 }
 
-                if ($child.PSIsContainer) {
+                    if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
                     if ($recurse) {
-                        $queue.Enqueue($child)
+                            $queue.Enqueue($childPath)
                     }
                     continue
                 }
 
-                if (-not (Test-QdfNameMatchesPatterns -Name $child.Name -Patterns $patterns)) {
+                    $name = [System.IO.Path]::GetFileName($childPath)
+                    if (-not (Test-QdfNameMatchesPatterns -Name $name -Patterns $patterns)) {
                     continue
                 }
 
-                if ($child.LastWriteTimeUtc -ge $CutoffUtc) {
+                    $lastWriteTimeUtc = [System.IO.File]::GetLastWriteTimeUtc($childPath)
+                    if ($lastWriteTimeUtc -ge $CutoffUtc) {
                     continue
                 }
 
-                if (Test-QdfProtectedPath -Path $child.FullName) {
+                    if (Test-QdfProtectedPath -Path $childPath) {
                     $SkippedItems.Add([pscustomobject]@{
-                        Path = $child.FullName
-                        Reason = 'Protected file.'
+                        Path = $childPath
+                        Reason = 'Protected path.'
                     })
                     continue
                 }
 
-                $results.Add($child)
+                    $fileInfo = New-Object System.IO.FileInfo($childPath)
+                    $results.Add([pscustomobject]@{
+                        FullName = $childPath
+                        Name = $name
+                        Length = [long]$fileInfo.Length
+                        LastWriteTimeUtc = $lastWriteTimeUtc
+                        PSIsContainer = $false
+                    })
             }
-
+            }
+            catch {
+                if ($_.Exception.Message -eq 'Scan cancelled.') { throw }
+                $SkippedItems.Add([pscustomobject]@{ Path = $currentPath; Reason = $_.Exception.Message })
+            }
             continue
         }
 
-        if (-not (Test-QdfNameMatchesPatterns -Name $current.Name -Patterns $patterns)) {
+        $name = [System.IO.Path]::GetFileName($currentPath)
+        if (-not (Test-QdfNameMatchesPatterns -Name $name -Patterns $patterns)) {
             continue
         }
 
-        if ($current.LastWriteTimeUtc -ge $CutoffUtc) {
+        $lastWriteTimeUtc = [System.IO.File]::GetLastWriteTimeUtc($currentPath)
+        if ($lastWriteTimeUtc -ge $CutoffUtc) {
             continue
         }
 
-        if (-not (Test-QdfProtectedPath -Path $current.FullName)) {
-            $results.Add($current)
+        if (-not (Test-QdfProtectedPath -Path $currentPath)) {
+            $fileInfo = New-Object System.IO.FileInfo($currentPath)
+            $results.Add([pscustomobject]@{
+                FullName = $currentPath
+                Name = $name
+                Length = [long]$fileInfo.Length
+                LastWriteTimeUtc = $lastWriteTimeUtc
+                PSIsContainer = $false
+            })
         }
     }
 
@@ -494,6 +675,11 @@ function Test-QdfCandidatePath {
         $normalizedPath = Get-QdfNormalizedPath -Path $Path
     }
     if (-not (Test-QdfPathChain -Path $normalizedPath) -or (Test-QdfProtectedNormalizedPath -NormalizedPath $normalizedPath)) {
+        return $false
+    }
+    # Re-checked at the removal boundary: the whitelist may have changed
+    # between scanning and deletion.
+    if (Test-QdfWhitelistedNormalized -NormalizedPath $normalizedPath) {
         return $false
     }
 

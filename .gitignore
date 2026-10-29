@@ -93,3 +93,6 @@ session.json
 journal/2026-03-11-safe-remove-design.md
 mole.cmd
 mo.cmd
+
+# Read-only upstream checkout used for feature comparison
+.upstream-mole/
