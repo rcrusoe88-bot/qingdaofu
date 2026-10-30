@@ -14,6 +14,7 @@ let scanResult = null;        // 最近一次扫描结果（清理页 / 分析�
 let scanSeen = [];            // 扫描中已出现的规则名，用于逐条打勾
 let selected = new Set();     // 已勾选的规则 id
 let cleanResult = null;
+let cleanProgress = null;     // 清理中最近一次进度事件（规则序号 + 已处理条目）
 let historyRows = null;
 let orphanState = 'idle';     // 已卸载残留子态：idle / scanning / done
 let orphanResult = null;
@@ -28,7 +29,7 @@ function onTaskError(e) {
     showError(e && e.message ? e.message : String(e));
     if (scanState === 'scanning' || scanState === 'cleaning') {
         // Never reuse a snapshot after a potentially partial cleanup.
-        scanState = 'idle'; scanResult = null; selected = new Set(); historyRows = null;
+        scanState = 'idle'; scanResult = null; selected = new Set(); historyRows = null; cleanProgress = null;
         renderClean();
     }
 }
@@ -161,11 +162,26 @@ function viewScanning() {
 }
 
 function viewCleaning() {
+    const p = cleanProgress || {};
+    const total = Number(p.total) || 0;
+    const index = Number(p.index) || 0;
+    const items = Number(p.items) || 0;
+    const bytes = Number(p.bytes) || 0;
+    const pct = total ? Math.round(((index - 1) / total) * 100) : 0;
+    const sub = [
+        p.ruleName || '',
+        items ? `${T.cleanProcessed || ''} ${items} ${T.itemSuffix || ''}` : '',
+        bytes ? `${T.summaryFreed || ''} ${fmtSize(bytes)}` : '',
+    ].filter(Boolean).join(' · ');
+    const bar = total
+        ? `<div class="bar"><i style="width:${Math.max(2, Math.min(100, pct))}%"></i></div>`
+        : `<div class="bar indet"><i></i></div>`;
     return `<div class="hero">
         <div class="hero-label">${esc(T.statusCleaning || '')}</div>
-        <div class="hero-sub">${esc(T.cleaningNow || '')}</div>
+        ${total ? `<div class="hero-value">${index} / ${total}</div>` : ''}
+        <div class="hero-sub">${esc(sub || T.cleaningNow || '')}</div>
     </div>
-    <div class="card"><div class="pad"><div class="bar indet"><i></i></div></div></div>`;
+    <div class="card"><div class="pad">${bar}</div></div>`;
 }
 
 function viewReview() {
@@ -502,6 +518,11 @@ function onScanProgress(ev) {
     if (scanState === 'scanning') renderClean();
 }
 
+function onCleanProgress(ev) {
+    cleanProgress = ev || null;
+    if (scanState === 'cleaning') renderClean();
+}
+
 function onScanDone(result) {
     if (!result || result.type !== 'result') {
         scanState = 'idle';
@@ -529,6 +550,7 @@ async function startClean() {
     if (!confirm(lines.join('\n\n'))) return;
 
     scanState = 'cleaning';
+    cleanProgress = null;
     renderClean();
     try {
         const err = await QDF.clean([...selected]);
@@ -551,6 +573,7 @@ function onCleanDone(result) {
         return;
     }
     cleanResult = result;
+    cleanProgress = null;
     if (result.State && result.State !== 'Completed') showError(operationState(result.State) + (result.Error ? '：' + result.Error : '；请查看记录页。'));
     scanState = 'done';
     scanResult = null;            // 扫过的内容已经被处理，旧结果不再可信
@@ -704,7 +727,7 @@ function applyStrings() {
 
     QDF.on('scan:progress', onScanProgress);
     QDF.on('scan:done', onScanDone);
-    QDF.on('clean:progress', () => {});
+    QDF.on('clean:progress', onCleanProgress);
     QDF.on('clean:done', onCleanDone);
     QDF.on('orphans:progress', () => { if (orphanState === 'scanning') renderAnalyze(); });
     QDF.on('orphans:done', onOrphansDone);

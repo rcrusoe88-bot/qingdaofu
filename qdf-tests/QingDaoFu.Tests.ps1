@@ -107,6 +107,22 @@ Describe 'QingDaoFu scanner' {
         }
     }
 
+    It 'scans a rule rooted at a single file' {
+        $fixture = New-QdfTestFixture
+        try {
+            $ruleset = Read-QdfJsonFile -Path $fixture.RulesPath
+            $ruleset.rules[0].pathTemplates = @($fixture.OldFile)
+            [System.IO.File]::WriteAllText($fixture.RulesPath, ($ruleset | ConvertTo-Json -Depth 8))
+
+            $scan = Invoke-QdfScan -RulesPath $fixture.RulesPath -SkipLargeFiles -MaxDetailsPerCategory -1
+            @($scan.Categories[0].Files).Count | Should Be 1
+            $scan.Categories[0].Files[0].Path | Should Be (Get-Item -LiteralPath $fixture.OldFile).FullName
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
     It 'rejects candidates outside the rule root' {
         $fixture = New-QdfTestFixture
         try {
@@ -163,6 +179,27 @@ Describe 'QingDaoFu executor' {
         }
     }
 
+    It 'cleans a rule rooted at a single file' {
+        $fixture = New-QdfTestFixture
+        try {
+            $ruleset = Read-QdfJsonFile -Path $fixture.RulesPath
+            $ruleset.rules[0].pathTemplates = @($fixture.OldFile)
+            [System.IO.File]::WriteAllText($fixture.RulesPath, ($ruleset | ConvertTo-Json -Depth 8))
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            Test-Path -LiteralPath $fixture.OldFile | Should Be $false
+            $result.SuccessfulCount | Should Be 1
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
     It 'fast-path deletes a fully covered subtree once' {
         $fixture = New-QdfTestFixture
         try {
@@ -188,6 +225,99 @@ Describe 'QingDaoFu executor' {
             $result.ReceiptPath | Should Not BeNullOrEmpty
         }
         finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'removes a fully covered child subtree as one unit' {
+        $fixture = New-QdfTestFixture
+        try {
+            # 70 old files make the nested tree a full unit (>= QdfMinUnitFiles),
+            # while the fixture's too-new file keeps the rule root uncovered.
+            $package = Join-Path $fixture.CacheRoot 'pkg\payload'
+            New-Item -ItemType Directory -Path $package -Force | Out-Null
+            for ($i = 0; $i -lt 70; $i++) {
+                $file = Join-Path $package "p$i.tmp"
+                Set-Content -LiteralPath $file -Value ('x' * 64) -Encoding ASCII
+                (Get-Item -LiteralPath $file).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-10)
+            }
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            $journal = @(Get-Content -LiteralPath ($result.ReceiptPath + '.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+            $unitPath = Join-Path $fixture.CacheRoot 'pkg'
+            @($journal | Where-Object { $_.Type -eq 'outcome' -and $_.Path -eq $unitPath }).Count | Should Be 1
+            Test-Path -LiteralPath $unitPath | Should Be $false
+            Test-Path -LiteralPath $fixture.NewFile | Should Be $true
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'removes a read-only candidate instead of failing it' {
+        $fixture = New-QdfTestFixture
+        $readOnly = Join-Path $fixture.CacheRoot 'readonly.tmp'
+        try {
+            Set-Content -LiteralPath $readOnly -Value ('x' * 64) -Encoding ASCII
+            (Get-Item -LiteralPath $readOnly).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-10)
+            [System.IO.File]::SetAttributes($readOnly, [System.IO.FileAttributes]::ReadOnly)
+            $expectedBytes = (Get-Item -LiteralPath $fixture.OldFile).Length + (Get-Item -LiteralPath $readOnly).Length
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            Test-Path -LiteralPath $readOnly | Should Be $false
+            $result.FailedCount | Should Be 0
+            $result.SuccessfulCount | Should Be 2
+            $result.BytesFreed | Should Be $expectedBytes
+        }
+        finally {
+            if (Test-Path -LiteralPath $readOnly) {
+                [System.IO.File]::SetAttributes($readOnly, [System.IO.FileAttributes]::Normal)
+            }
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'removes a fully covered read-only subtree as one unit' {
+        $fixture = New-QdfTestFixture
+        $package = Join-Path $fixture.CacheRoot 'pkg\payload'
+        try {
+            New-Item -ItemType Directory -Path $package -Force | Out-Null
+            for ($i = 0; $i -lt 70; $i++) {
+                $file = Join-Path $package "p$i.tmp"
+                Set-Content -LiteralPath $file -Value ('x' * 64) -Encoding ASCII
+                (Get-Item -LiteralPath $file).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-10)
+                [System.IO.File]::SetAttributes($file, [System.IO.FileAttributes]::ReadOnly)
+            }
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            Test-Path -LiteralPath (Join-Path $fixture.CacheRoot 'pkg') | Should Be $false
+            Test-Path -LiteralPath $fixture.NewFile | Should Be $true
+            $result.FailedCount | Should Be 0
+            $result.SuccessfulCount | Should Be 71   # 70 unit files + old.tmp
+        }
+        finally {
+            # If the unit delete fails, fixture cleanup must not trip over the
+            # read-only files it left behind.
+            if (Test-Path -LiteralPath $package) {
+                Get-ChildItem -LiteralPath $package -File | ForEach-Object {
+                    [System.IO.File]::SetAttributes($_.FullName, [System.IO.FileAttributes]::Normal)
+                }
+            }
             Remove-QdfTestFixture -Fixture $fixture
         }
     }

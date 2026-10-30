@@ -178,7 +178,25 @@
       emit('scan:done', MOCK_SCAN);
       return null;
     },
-    clean: async () => { await sleep(900); emit('clean:done', MOCK_CLEAN); return null; },
+    // Mirrors the clean NDJSON contract: per-rule progress with the item and
+    // byte counters the one-pass walk now reports.
+    clean: async () => {
+      const steps = [
+        { name: 'Chrome 网页缓存', items: 1230, bytes: 180 * MB },
+        { name: 'npm 缓存', items: 21003, bytes: 420 * MB },
+        { name: 'uv 缓存', items: 95266, bytes: 270 * MB },
+      ];
+      for (let i = 0; i < steps.length; i++) {
+        emit('clean:progress', {
+          type: 'progress', phase: 'clean', index: i + 1, total: steps.length,
+          ruleId: 'mock-' + i, ruleName: steps[i].name,
+          items: steps[i].items, bytes: steps[i].bytes,
+        });
+        await sleep(260);
+      }
+      emit('clean:done', MOCK_CLEAN);
+      return null;
+    },
     orphans: async () => {
       emit('orphans:progress', { type: 'progress', phase: 'orphans', index: 1, total: 1, ruleName: '已卸载软件残留' });
       await sleep(500);

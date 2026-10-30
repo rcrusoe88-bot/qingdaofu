@@ -10,9 +10,56 @@
     if ([System.IO.File]::Exists($Path)) { throw 'The recycle operation did not remove the candidate.' }
 }
 
+# Walks the exception chain: a static .NET method call surfaces as a
+# MethodInvocationException whose inner Win32Exception carries code 5.
+function Test-QdfAccessDeniedError {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $exception = $ErrorRecord.Exception
+    while ($null -ne $exception) {
+        if ($exception -is [System.UnauthorizedAccessException]) { return $true }
+        if ($exception -is [System.ComponentModel.Win32Exception] -and $exception.NativeErrorCode -eq 5) { return $true }
+        if ($exception.Message -match 'Access is denied|拒绝访问') { return $true }
+        $exception = $exception.InnerException
+    }
+    return $false
+}
+
+# Windows refuses to delete a read-only file (Access Denied). Size and mtime
+# were verified by the first DeleteVerified call, and the retry verifies them
+# again, so clearing the bit cannot widen what gets removed.
 function Remove-QdfCandidateFile {
     param([string]$Path, [long]$Size, [datetime]$LastWriteTimeUtc)
-    [QdfPathLease]::DeleteVerified($Path, $Size, $LastWriteTimeUtc.ToFileTimeUtc())
+
+    $writeTime = $LastWriteTimeUtc.ToFileTimeUtc()
+    try {
+        [QdfPathLease]::DeleteVerified($Path, $Size, $writeTime)
+        return
+    }
+    catch {
+        $deleteError = $_
+        if (-not (Test-QdfAccessDeniedError -ErrorRecord $deleteError)) { throw $deleteError }
+    }
+
+    $attributes = $null
+    try { $attributes = [System.IO.File]::GetAttributes($Path) }
+    catch { throw $deleteError }
+    if (($attributes -band [System.IO.FileAttributes]::ReadOnly) -eq 0) { throw $deleteError }
+
+    [System.IO.File]::SetAttributes(
+        $Path,
+        [System.IO.FileAttributes](([int]$attributes) -band (-bnot [int][System.IO.FileAttributes]::ReadOnly))
+    )
+    try {
+        [QdfPathLease]::DeleteVerified($Path, $Size, $writeTime)
+    }
+    catch {
+        $retryError = $_
+        if ([System.IO.File]::Exists($Path)) {
+            try { [System.IO.File]::SetAttributes($Path, $attributes) } catch { }
+        }
+        throw $retryError
+    }
 }
 
 $script:QdfJournalWriters = @{}
@@ -64,119 +111,10 @@ function Test-QdfPathUnder {
     return $Path.StartsWith($Directory + '\', [System.StringComparison]::OrdinalIgnoreCase)
 }
 
-# Pick whole-subtree removal targets out of one category's scan results. A
-# candidate directory qualifies only when every live file under it (recursive)
-# was scanned as a candidate — then nothing inside is exempt, and the fast
-# path deletes the entire subtree in one shot instead of one verified unlink
-# per file. minFiles keeps the amortized walk off rules with only a few files.
-# Returns disjoint picks: a qualifying parent suppresses its qualifying
-# descendants, so one subtree is never counted or deleted twice.
-# candidate directory qualifies only when every live file under it (recursive)
-# was scanned as a candidate — then nothing inside is exempt, and the fast
-# path deletes the entire subtree in one shot instead of one verified unlink
-# per file. minFiles keeps the amortized walk off rules with only a few files.
-# Returns disjoint picks: a qualifying parent suppresses its qualifying
-# descendants, so one subtree is never counted or deleted twice.
-function Get-QdfFastPathDirectories {
-    param(
-        [Parameter(Mandatory = $true)][object[]]$Files,
-        [int]$MinFiles = 64
-    )
-
-    if ($Files.Count -lt $MinFiles) { return @() }
-
-    # Direct parent directories and the set of candidate paths, built once.
-    $dirSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $candidatePaths = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $Files) {
-        $path = [string]$file.Path
-        $null = $candidatePaths.Add($path)
-        $dir = [System.IO.Path]::GetDirectoryName($path)
-        if (-not [string]::IsNullOrWhiteSpace($dir)) { $null = $dirSet.Add($dir) }
-    }
-
-    # Candidate count and byte total per directory subtree, accumulated once
-    # along each file's ancestor chain. The previous version re-walked every
-    # file for every distinct directory — O(dirs x files) — so a 200k-file rule
-    # spent hours here before the first deletion.
-    $subtreeCount = New-Object 'System.Collections.Generic.Dictionary[string, int]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $subtreeBytes = New-Object 'System.Collections.Generic.Dictionary[string, long]' ([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $Files) {
-        $size = [long]$file.Size
-        $dir = [System.IO.Path]::GetDirectoryName([string]$file.Path)
-        while (-not [string]::IsNullOrWhiteSpace($dir)) {
-            if ($dirSet.Contains($dir)) {
-                if ($subtreeCount.ContainsKey($dir)) {
-                    $subtreeCount[$dir]++
-                    $subtreeBytes[$dir] += $size
-                }
-                else {
-                    $subtreeCount[$dir] = 1
-                    $subtreeBytes[$dir] = $size
-                }
-            }
-            $dir = [System.IO.Path]::GetDirectoryName($dir)
-        }
-    }
-
-    # The coverage walk can dominate on a huge tree (198k files took ~90 s), so
-    # it runs on a budget. Whatever was proven before the deadline is still
-    # safe to remove as a subtree; the rest falls back to per-file deletion.
-    $budget = [System.Diagnostics.Stopwatch]::StartNew()
-    $budgetSeconds = 15
-    # Largest subtrees first: a rule root that is fully covered is found on the
-    # first pass, and one directory delete then replaces hundreds of thousands
-    # of per-file deletes.
-    $ordered = New-Object System.Collections.Generic.List[object]
-    foreach ($entry in $subtreeCount.GetEnumerator()) {
-        if ([int]$entry.Value -ge $MinFiles) { $ordered.Add($entry) }
-    }
-    $ordered.Sort([System.Comparison[object]] { param($a, $b) ([int]$b.Value).CompareTo([int]$a.Value) })
-
-    $qualifying = New-Object System.Collections.Generic.List[object]
-    foreach ($entry in $ordered) {
-        if ($budget.Elapsed.TotalSeconds -ge $budgetSeconds) { break }
-        $dir = $entry.Key
-        $expected = [int]$entry.Value
-        if ($candidatePaths.Contains($dir)) { continue }   # the directory itself is a candidate
-
-        # Count live files, stopping the moment the count exceeds what was
-        # scanned: coverage can only fail from there, so the full walk is not
-        # needed. A walk that throws leaves coverage unproven.
-        $liveCount = 0
-        $complete = $true
-        try {
-            foreach ($unused in [System.IO.Directory]::EnumerateFiles($dir, '*', [System.IO.SearchOption]::AllDirectories)) {
-                $liveCount++
-                if ($liveCount -gt $expected) { break }
-            }
-        }
-        catch { $complete = $false }
-        if (-not $complete -or $liveCount -ne $expected) { continue }
-
-        $qualifying.Add([pscustomobject]@{
-            Directory = $dir
-            Bytes = [long]$subtreeBytes[$dir]
-            LiveCount = $expected
-        })
-    }
-
-    # Disjoint picks: a qualifying parent suppresses its qualifying descendants.
-    $picks = New-Object System.Collections.Generic.List[object]
-    foreach ($pick in @($qualifying | Sort-Object -Property @{ Expression = 'Directory'; Descending = $true })) {
-        $nested = $false
-        foreach ($existing in $picks) {
-            if (Test-QdfPathUnder -Path ([string]$pick.Directory) -Directory ([string]$existing.Directory)) {
-                $nested = $true
-                break
-            }
-        }
-        if (-not $nested) { $picks.Add($pick) }
-    }
-    # ToArray, not @($picks): PowerShell 5.1 throws "parameter type mismatch"
-    # when @() wraps a List[object] directly.
-    return $picks.ToArray()
-}
+# A fully covered directory becomes one unit delete only when it holds at
+# least this many files. Coverage is proved by the clean walk itself, so no
+# separate planner pass (and no second tree walk) is needed.
+$script:QdfMinUnitFiles = 64
 
 function Save-QdfReceipt {
     param([string]$Path, [object]$Receipt)
@@ -189,13 +127,12 @@ function Save-QdfReceipt {
     else { [System.IO.File]::Move($temporary, $Path) }
 }
 
-# Whole-subtree removal for recursion-matched rules on delete actions. The
-# scanner guarantees every file under the rule root matches the rule, so a
-# directory whose live file count equals its candidate count can be deleted in
-# one shot instead of one verified unlink per file — the difference matters for
-# caches holding hundreds of thousands of tiny files. Safety: ancestry and
-# non-reparse are enforced inside QdfPathLease.DeleteDirectoryVerified, and the
-# boundary recheck below covers the directory against rule-external movement.
+# Whole-subtree removal for a directory the clean walk proved fully covered.
+# One directory delete replaces one verified unlink per file — the difference
+# matters for caches holding hundreds of thousands of tiny files. Safety:
+# ancestry and non-reparse are enforced inside
+# QdfPathLease.DeleteDirectoryVerified, and the boundary recheck below covers
+# the directory against rule-external movement.
 function Remove-QdfCandidateDirectory {
     param([string]$Path, [object]$Rule, [object[]]$NormalizedRoots)
     if (-not (Test-QdfCandidatePath -Path $Path -Rule $Rule -NormalizedRoots $NormalizedRoots)) {
@@ -203,6 +140,273 @@ function Remove-QdfCandidateDirectory {
     }
     if (Test-QdfProtectedPath -Path $Path) { throw 'Candidate is protected.' }
     [QdfPathLease]::DeleteDirectoryVerified($Path)
+}
+
+function Add-QdfCleanReceiptItem {
+    param([hashtable]$Context, [object]$Entry)
+    if ($Context.ReceiptItems.Count -lt $Context.MaxReceiptItems) {
+        $null = $Context.ReceiptItems.Add($Entry)
+    }
+    else { $Context.Receipt.ReceiptTruncated = $true }
+}
+
+# Progress is rule-granular plus an item counter refreshed every 256 entries;
+# per-file events would cost more than the work they report.
+function Write-QdfCleanProgress {
+    param([hashtable]$Context)
+    if ($null -eq $Context.OnProgress) { return }
+    & $Context.OnProgress @{
+        RuleId = $Context.RuleId
+        RuleName = $Context.RuleName
+        Index = $Context.RuleIndex
+        Total = $Context.RuleTotal
+        Items = $Context.CandidateCount
+        BytesFreed = $Context.Summary.BytesFreed
+    }
+}
+
+function Write-QdfCleanOutcome {
+    param([hashtable]$Context, [object]$Entry, [string]$Status, [string]$Reason = '')
+    $Entry.Type = 'outcome'
+    $Entry.Status = $Status
+    $Entry.Reason = $Reason
+    # Journal failure aborts all subsequent deletions.
+    try { Write-QdfJournalEvent $Context.JournalPath $Entry }
+    catch { $Context.Summary.JournalIncomplete = $true; throw }
+    Add-QdfCleanReceiptItem -Context $Context -Entry $Entry
+}
+
+# One verified unlink for a file whose directory is not fully covered. The
+# lease pins every ancestor while the delete runs, and DeleteVerified re-checks
+# size and mtime against the values the walk read moments ago.
+function Invoke-QdfCleanFile {
+    param([Parameter(Mandatory = $true)][System.IO.FileInfo]$File, [hashtable]$Context)
+
+    $summary = $Context.Summary
+    $entry = [pscustomobject]@{
+        Type = 'planned'; RuleId = $Context.RuleId; Path = $File.FullName; Size = [long]$File.Length
+        Action = $Context.Action; DryRun = [bool]$Context.DryRun; Status = 'Unknown'; Reason = ''
+    }
+    try { Write-QdfJournalEvent $Context.JournalPath $entry }
+    catch { $summary.JournalIncomplete = $true; throw }
+
+    $lease = $null
+    try {
+        if ($Context.DryRun) {
+            $entry.Status = 'DryRun'
+        }
+        elseif ($Context.Action -eq 'recycle') {
+            Move-QdfFileToRecycleBin -Path $File.FullName
+            $summary.BytesRecycled += [long]$File.Length
+            $entry.Status = 'Recycled'
+        }
+        else {
+            $lease = New-Object QdfPathLease($File.FullName)
+            Remove-QdfCandidateFile -Path $File.FullName -Size ([long]$File.Length) -LastWriteTimeUtc $File.LastWriteTimeUtc
+            $summary.BytesFreed += [long]$File.Length
+            $entry.Status = 'Deleted'
+        }
+        $summary.SuccessfulCount++
+    }
+    catch {
+        if ($_.Exception.Message -eq 'Cancelled.') { throw }
+        $entry.Status = 'Failed'; $entry.Reason = $_.Exception.Message; $summary.FailedCount++
+        if ($summary.Failures.Count -lt $Context.MaxReceiptItems) { $summary.Failures += $entry.PSObject.Copy() }
+    }
+    finally { if ($null -ne $lease) { $lease.Dispose() } }
+    Write-QdfCleanOutcome -Context $Context -Entry $entry -Status $entry.Status -Reason $entry.Reason
+}
+
+# Whole-subtree removal for a directory the walk proved fully covered. A busy
+# tree is skipped as a unit: retrying every locked file is what made a running
+# browser's cache take tens of minutes. Any other failure still falls back to
+# per-file verified removal.
+function Invoke-QdfCleanUnit {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [long]$Bytes,
+        [int]$Count,
+        [hashtable]$Context,
+        [object[]]$NormalizedRoots
+    )
+
+    $summary = $Context.Summary
+    $entry = [pscustomobject]@{
+        Type = 'planned'; RuleId = $Context.RuleId; Path = $Path; Size = $Bytes
+        Action = 'delete'; DryRun = $false; Status = 'Unknown'; Reason = ''
+    }
+    try { Write-QdfJournalEvent $Context.JournalPath $entry }
+    catch { $summary.JournalIncomplete = $true; throw }
+
+    $status = 'Deleted'
+    $reason = ''
+    try {
+        Remove-QdfCandidateDirectory -Path $Path -Rule $Context.Rule -NormalizedRoots $NormalizedRoots
+        $summary.BytesFreed += $Bytes
+        $summary.SuccessfulCount += $Count
+    }
+    catch {
+        if ($_.Exception.Message -eq 'Cancelled.') { throw }
+        $reason = $_.Exception.Message
+        if ($reason -match 'being used|used by another process|access.*denied|拒绝访问|进程无法访问') {
+            $status = 'SkippedBusy'
+            $summary.SkippedCount++
+        }
+        else {
+            $status = 'SlowPathFallback'
+        }
+    }
+    Write-QdfCleanOutcome -Context $Context -Entry $entry -Status $status -Reason $reason
+
+    if ($status -eq 'SlowPathFallback') {
+        $Context.SuppressCount = $true
+        try { $null = Invoke-QdfCleanDirectory -Path $Path -Context $Context -AllowUnitDelete $false }
+        finally { $Context.SuppressCount = $false }
+    }
+    return $status
+}
+
+# Bottom-up walk that decides and removes in one pass. A directory is fully
+# eligible when every file below it is a candidate; such a subtree is returned
+# to its parent instead of being deleted, so the largest covered subtree wins
+# and one directory delete replaces every per-file unlink inside it. A subtree
+# smaller than QdfMinUnitFiles returns its files for individual removal, which
+# keeps the old "do not delete a small rule root itself" behavior.
+function Invoke-QdfCleanDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [hashtable]$Context,
+        [bool]$AllowUnitDelete
+    )
+
+    $count = 0
+    $bytes = 0L
+    $fullyEligible = $true
+    $filesOut = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    $unitsOut = New-Object System.Collections.Generic.List[object]
+    $entries = $null
+
+    try { $entries = [System.IO.Directory]::EnumerateFileSystemEntries($Path) }
+    catch {
+        return [pscustomobject]@{ Eligible = $false; Count = 0; Bytes = 0L; Files = $null }
+    }
+
+    try {
+        foreach ($entryPath in $entries) {
+            $Context['Visited'] = [int]$Context['Visited'] + 1
+            if (($Context['Visited'] -band 255) -eq 0) {
+                if ($Context['CancelPath'] -and [System.IO.File]::Exists($Context['CancelPath'])) { throw 'Cancelled.' }
+                # A failing progress sink (closed UI pipe) must stop deletion,
+                # not be mistaken for an unreadable directory below.
+                $Context['ProgressCall'] = $true
+                Write-QdfCleanProgress -Context $Context
+                $Context['ProgressCall'] = $false
+            }
+
+            # One FileInfo read serves attributes, length and mtime: the walk
+            # and the later unlink share the same cached metadata.
+            $info = $null
+            try {
+                $info = New-Object System.IO.FileInfo($entryPath)
+                $attributes = $info.Attributes
+            }
+            catch {
+                $fullyEligible = $false
+                continue
+            }
+
+            if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $fullyEligible = $false
+                continue
+            }
+
+            if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+                if (-not $Context['Recurse']) { continue }
+                if ($Context['WhitelistActive'] -and
+                    (Test-QdfWhitelistedNormalized -NormalizedPath (Get-QdfNormalizedPath -Path $entryPath))) {
+                    $fullyEligible = $false
+                    continue
+                }
+                # Never descend into a protected directory, and never let a
+                # parent's unit delete swallow one.
+                if (Test-QdfProtectedPath -Path $entryPath) {
+                    $fullyEligible = $false
+                    continue
+                }
+
+                $sub = Invoke-QdfCleanDirectory -Path $entryPath -Context $Context -AllowUnitDelete $AllowUnitDelete
+                if (-not $sub.Eligible) {
+                    $fullyEligible = $false
+                    continue
+                }
+                $count += [int]$sub.Count
+                $bytes += [long]$sub.Bytes
+                if ($AllowUnitDelete) {
+                    if ([int]$sub.Count -ge $script:QdfMinUnitFiles) {
+                        $null = $unitsOut.Add([pscustomobject]@{ Directory = $entryPath; Count = [int]$sub.Count; Bytes = [long]$sub.Bytes })
+                    }
+                    elseif ($null -ne $sub.Files) {
+                        foreach ($file in $sub.Files) { $null = $filesOut.Add($file) }
+                    }
+                }
+                continue
+            }
+
+            # Scanner-level checks only: the walk already refused reparse
+            # entries and protected directories, and the lease re-checks the
+            # ancestor chain at unlink time. Re-normalizing every path here
+            # would double the cost of the walk for no extra guarantee.
+            $name = $info.Name
+            if (-not $Context['MatchAll'] -and -not (Test-QdfNameMatchesPatterns -Name $name -Patterns $Context['Patterns'])) {
+                $fullyEligible = $false
+                continue
+            }
+            if ($Context['CutoffUtc'] -ne [datetime]::MaxValue -and $info.LastWriteTimeUtc -ge $Context['CutoffUtc']) {
+                $fullyEligible = $false
+                continue
+            }
+            if (Test-QdfProtectedLeafName -Name $name) {
+                $fullyEligible = $false
+                continue
+            }
+            if ($Context['WhitelistActive'] -and
+                (Test-QdfWhitelistedNormalized -NormalizedPath (Get-QdfNormalizedPath -Path $entryPath))) {
+                $fullyEligible = $false
+                continue
+            }
+
+            $count++
+            $bytes += [long]$info.Length
+            if (-not $Context['SuppressCount']) { $Context['CandidateCount'] = [int]$Context['CandidateCount'] + 1 }
+            if ($AllowUnitDelete) { $null = $filesOut.Add($info) }
+            else { Invoke-QdfCleanFile -File $info -Context $Context }
+        }
+    }
+    catch [System.IO.IOException] {
+        if ($Context['ProgressCall'] -or $Context.Summary.JournalIncomplete) { throw }
+        $fullyEligible = $false
+    }
+    catch [System.UnauthorizedAccessException] {
+        if ($Context['ProgressCall'] -or $Context.Summary.JournalIncomplete) { throw }
+        $fullyEligible = $false
+    }
+
+    if (-not $AllowUnitDelete) {
+        return [pscustomobject]@{ Eligible = $false; Count = 0; Bytes = 0L; Files = $null }
+    }
+    if ($fullyEligible) {
+        $files = $null
+        if ($count -lt $script:QdfMinUnitFiles) { $files = $filesOut.ToArray() }
+        return [pscustomobject]@{ Eligible = $true; Count = $count; Bytes = $bytes; Files = $files }
+    }
+
+    # Not fully covered: remove the covered children as units, then the covered
+    # files one by one. Anything ineligible stays for the next run.
+    foreach ($unit in $unitsOut) {
+        $null = Invoke-QdfCleanUnit -Path ([string]$unit.Directory) -Bytes ([long]$unit.Bytes) -Count ([int]$unit.Count) -Context $Context -NormalizedRoots $Context['NormalizedRoots']
+    }
+    foreach ($file in $filesOut) { Invoke-QdfCleanFile -File $file -Context $Context }
+    return [pscustomobject]@{ Eligible = $false; Count = 0; Bytes = 0L; Files = $null }
 }
 
 function Invoke-QdfClean {
@@ -213,7 +417,8 @@ function Invoke-QdfClean {
         [switch]$SkipOperationLog,
         [string]$ReceiptDirectory = '',
         [int]$MaxReceiptItems = 2000,
-        [string]$CancelPath = ''
+        [string]$CancelPath = '',
+        [scriptblock]$OnProgress = $null
     )
     if ($SelectedRuleIds.Count -eq 0) { throw 'No cleanup rules were selected.' }
     $ruleset = Read-QdfJsonFile -Path $RulesPath
@@ -241,111 +446,79 @@ function Invoke-QdfClean {
     # A durable initial receipt must exist before any deletion, even if logging is unavailable.
     Save-QdfReceipt -Path $receiptPath -Receipt $receipt
     Write-QdfJournalEvent $journalPath @{ Type = 'started'; At = $summary.StartedAt }
-    $seen = @{}
+
     try {
-        $scanParams = @{
-            RulesPath = $RulesPath
-            RuleIds = $SelectedRuleIds
-            MaxDetailsPerCategory = -1
-            SkipLargeFiles = $true
-            CancelPath = $CancelPath
-        }
-        $scan = Invoke-QdfScan @scanParams
-        $summary.ScannedCandidateCount = [int](($scan.Categories | Measure-Object -Property ItemCount -Sum).Sum)
-        :categories foreach ($category in @($scan.Categories)) {
-            $rule = Get-QdfRuleById -Rules $rules -RuleId $category.Id
-            $roots = @(Resolve-QdfRuleRoots -Rule $rule | ForEach-Object { Get-QdfNormalizedPath $_.FullName })
+        $ruleIndex = 0
+        $ruleTotal = $SelectedRuleIds.Count
+        foreach ($ruleId in $SelectedRuleIds) {
+            if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break }
+            $rule = Get-QdfRuleById -Rules $rules -RuleId $ruleId
+            $ruleIndex++
+            $roots = @(Resolve-QdfRuleRoots -Rule $rule)
+            if ($roots.Count -eq 0) { continue }
 
-            # Fast path: recursion-matched delete rules may have whole subtrees
-            # whose every live file is a scanned candidate. Remove each such
-            # subtree in one shot, journaling one planned/outcome pair per
-            # directory, then let the per-file loop skip its members naturally.
-            if (-not $DryRun -and $category.Action -eq 'delete') {
-                foreach ($pick in (Get-QdfFastPathDirectories -Files @($category.Files))) {
-                    if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break categories }
-                    $entry = [pscustomobject]@{
-                        Type = 'planned'; RuleId = $category.Id; Path = $pick.Directory
-                        Size = [long]$pick.Bytes; Action = 'delete'; DryRun = $false; Status = 'Unknown'; Reason = ''
+            $patterns = @(Get-QdfPropertyValue -Object $rule -Name 'filePatterns' -DefaultValue @('*'))
+            $context = @{
+                Summary = $summary
+                Receipt = $receipt
+                ReceiptItems = $receiptItems
+                JournalPath = $journalPath
+                Rule = $rule
+                RuleId = $ruleId
+                RuleName = [string](Get-QdfPropertyValue -Object $rule -Name 'name' -DefaultValue $ruleId)
+                RuleIndex = $ruleIndex
+                RuleTotal = $ruleTotal
+                CutoffUtc = (Get-QdfRuleCutoffUtc -Rule $rule)
+                Patterns = $patterns
+                MatchAll = ($patterns.Count -eq 0 -or ($patterns.Count -eq 1 -and [string]$patterns[0] -eq '*'))
+                Recurse = [bool](Get-QdfPropertyValue -Object $rule -Name 'recurse' -DefaultValue $false)
+                Action = [string](Get-QdfPropertyValue -Object $rule -Name 'action' -DefaultValue 'delete')
+                DryRun = [bool]$DryRun
+                WhitelistActive = (@(Get-QdfWhitelistEntries).Count -gt 0)
+                CancelPath = $CancelPath
+                MaxReceiptItems = $MaxReceiptItems
+                NormalizedRoots = @($roots | ForEach-Object { Get-QdfNormalizedPath -Path $_.FullName })
+                Visited = 0
+                CandidateCount = 0
+                SuppressCount = $false
+                ProgressCall = $false
+                OnProgress = $OnProgress
+            }
+            Write-QdfCleanProgress -Context $context
+            $allowUnit = $context['Recurse'] -and $context['Action'] -eq 'delete' -and (-not $DryRun)
+
+            foreach ($root in $roots) {
+                if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break }
+                if ($root.PSIsContainer) {
+                    $result = Invoke-QdfCleanDirectory -Path $root.FullName -Context $context -AllowUnitDelete $allowUnit
+                    if ($allowUnit -and $result.Eligible -and [int]$result.Count -gt 0) {
+                        if ([int]$result.Count -ge $script:QdfMinUnitFiles) {
+                            $null = Invoke-QdfCleanUnit -Path $root.FullName -Bytes ([long]$result.Bytes) -Count ([int]$result.Count) -Context $context -NormalizedRoots $context['NormalizedRoots']
+                        }
+                        elseif ($null -ne $result.Files) {
+                            foreach ($file in $result.Files) { Invoke-QdfCleanFile -File $file -Context $context }
+                        }
                     }
-                    Write-QdfJournalEvent $journalPath $entry
+                }
+                else {
+                    # A rule may point at one file; it has no directory to fold.
+                    $info = $null
                     try {
-                        Remove-QdfCandidateDirectory -Path $pick.Directory -Rule $rule -NormalizedRoots $roots
-                        $entry.Status = 'Deleted'; $summary.BytesFreed += [long]$pick.Bytes
-                        $summary.SuccessfulCount += [int]$pick.LiveCount
-                        # Mark the subtree's scanned members done so the per-file
-                        # loop below does not re-walk now-missing paths.
-                        foreach ($file in @($category.Files)) {
-                            if (Test-QdfPathUnder -Path ([string]$file.Path) -Directory ([string]$pick.Directory)) {
-                                $seen[[string]$file.Path] = $true
-                            }
-                        }
+                        $info = New-Object System.IO.FileInfo($root.FullName)
+                        $attributes = $info.Attributes
                     }
-                    catch {
-                        $message = $_.Exception.Message
-                        if ($message -match 'being used|used by another process|access.*denied|拒绝访问|进程无法访问') {
-                            $entry.Status = 'SkippedBusy'
-                            $entry.Reason = $message
-                            $summary.SkippedCount++
-                            foreach ($file in @($category.Files)) {
-                                if (Test-QdfPathUnder -Path ([string]$file.Path) -Directory ([string]$pick.Directory)) {
-                                    $seen[[string]$file.Path] = $true
-                                }
-                            }
-                        }
-                        else {
-                            # Non-lock failures still fall back to verified files.
-                            $entry.Status = 'SlowPathFallback'; $entry.Reason = $message
-                        }
-                    }
-                    $entry.Type = 'outcome'
-                    try { Write-QdfJournalEvent $journalPath $entry }
-                    catch { $summary.JournalIncomplete = $true; throw }
-                    if ($receiptItems.Count -lt $MaxReceiptItems) { $receiptItems.Add($entry) }
-                    else { $receipt.ReceiptTruncated = $true }
+                    catch { continue }
+                    if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                    if (-not $context['MatchAll'] -and -not (Test-QdfNameMatchesPatterns -Name $info.Name -Patterns $patterns)) { continue }
+                    if ($context['CutoffUtc'] -ne [datetime]::MaxValue -and $info.LastWriteTimeUtc -ge $context['CutoffUtc']) { continue }
+                    if (Test-QdfProtectedLeafName -Name $info.Name) { continue }
+                    $context['CandidateCount'] = [int]$context['CandidateCount'] + 1
+                    Invoke-QdfCleanFile -File $info -Context $context
                 }
             }
-
-            foreach ($file in @($category.Files)) {
-                if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break categories }
-                $candidatePath = [string]$file.Path
-                if ($seen.ContainsKey($candidatePath)) { continue }
-                $seen[$candidatePath] = $true
-                $entry = [pscustomobject]@{
-                    Type = 'planned'; RuleId = $category.Id; Path = $candidatePath; Size = [long]$file.Size
-                    Action = $category.Action; DryRun = [bool]$DryRun; Status = 'Unknown'; Reason = ''
-                }
-                # A crash between planned and outcome means UNKNOWN, never an assumed success.
-                Write-QdfJournalEvent $journalPath $entry
-                $lease = $null
-                try {
-                    $lease = New-Object QdfPathLease($candidatePath)
-                    if (-not (Test-QdfCandidatePath -Path $candidatePath -Rule $rule -NormalizedRoots $roots)) { throw 'Candidate is outside the safe rule boundary.' }
-                    $current = Get-Item -LiteralPath $candidatePath -Force -ErrorAction Stop
-                    $expectedTime = [datetime]::Parse($file.LastWriteTimeUtc).ToUniversalTime()
-                    if ($current.PSIsContainer -or $current.Length -ne $file.Size -or $current.LastWriteTimeUtc -ne $expectedTime) { throw 'Candidate changed after scanning.' }
-                    if ($DryRun) { $entry.Status = 'DryRun' }
-                    elseif ($category.Action -eq 'recycle') {
-                        Move-QdfFileToRecycleBin -Path $candidatePath
-                        $entry.Status = 'Recycled'; $summary.BytesRecycled += $file.Size
-                    }
-                    else {
-                        Remove-QdfCandidateFile -Path $candidatePath -Size $file.Size -LastWriteTimeUtc $expectedTime
-                        $entry.Status = 'Deleted'; $summary.BytesFreed += $file.Size
-                    }
-                    $summary.SuccessfulCount++
-                }
-                catch {
-                    $entry.Status = 'Failed'; $entry.Reason = $_.Exception.Message; $summary.FailedCount++
-                    if ($summary.Failures.Count -lt $MaxReceiptItems) { $summary.Failures += $entry.PSObject.Copy() }
-                }
-                finally { if ($null -ne $lease) { $lease.Dispose() } }
-                $entry.Type = 'outcome'
-                # Journal failure aborts all subsequent deletions.
-                try { Write-QdfJournalEvent $journalPath $entry }
-                catch { $summary.JournalIncomplete = $true; throw }
-                if ($receiptItems.Count -lt $MaxReceiptItems) { $receiptItems.Add($entry) }
-                else { $receipt.ReceiptTruncated = $true }
-            }
+            $summary.ScannedCandidateCount += [int]$context['CandidateCount']
+            Write-QdfCleanProgress -Context $context
+            if ($summary.State -eq 'Cancelled') { break }
         }
         if ($summary.State -ne 'Cancelled') {
             $summary.State = if ($summary.FailedCount -gt 0) { 'Partial' } else { 'Completed' }

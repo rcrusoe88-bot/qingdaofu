@@ -139,35 +139,28 @@ function Invoke-QdfScan {
 
         $cutoffUtc = Get-QdfRuleCutoffUtc -Rule $rule
         $roots = @(Resolve-QdfRuleRoots -Rule $rule -SkippedItems $skippedItems)
-        $files = New-Object System.Collections.Generic.List[object]
+        # FileInfo objects, not pre-built PowerShell candidates: count and size
+        # come from the cached metadata read during the walk, and only the
+        # displayed details (top N) are materialized as candidates.
+        $files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
         $itemCount = 0
         $totalSize = 0L
 
         foreach ($root in $roots) {
             if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { throw 'Scan cancelled.' }
-            $matchedFiles = @(Get-QdfFilesFromRoot -Root $root -Rule $rule -CutoffUtc $cutoffUtc -SkippedItems $skippedItems -CancelPath $CancelPath)
+            $matchedFiles = Get-QdfFilesFromRoot -Root $root -Rule $rule -CutoffUtc $cutoffUtc -SkippedItems $skippedItems -CancelPath $CancelPath
             foreach ($file in $matchedFiles) {
-                # Inlined candidate build (vs New-QdfFileCandidate): this loop
-                # runs once per scanned file, and PowerShell function-call plus
-                # pipeline overhead dominates for caches with 100k+ entries.
-                $candidate = [pscustomobject]@{
-                    Path = $file.FullName
-                    Name = $file.Name
-                    Size = [long]$file.Length
-                    LastWriteTimeUtc = $file.LastWriteTimeUtc.ToString('o')
-                }
-
                 if ($kind -eq 'large-files') {
                     $threshold = [long](Get-QdfPropertyValue -Object $ruleset -Name 'largeFileThresholdBytes' -DefaultValue 1073741824)
-                    if ($candidate.Size -ge $threshold) {
-                        $largeFiles.Add($candidate)
+                    if ([long]$file.Length -ge $threshold) {
+                        $largeFiles.Add((New-QdfFileCandidate -File $file))
                     }
                     continue
                 }
 
                 $itemCount++
-                $totalSize += [long]$candidate.Size
-                if ($MaxDetailsPerCategory -lt 0 -or $files.Count -lt $MaxDetailsPerCategory) { $files.Add($candidate) }
+                $totalSize += [long]$file.Length
+                $files.Add($file)
             }
         }
 
@@ -175,13 +168,12 @@ function Invoke-QdfScan {
             continue
         }
 
-
         $details = @()
         if ($MaxDetailsPerCategory -lt 0) {
-            $details = @($files | Sort-Object -Property Size -Descending)
+            $details = @($files | Sort-Object -Property Length -Descending | ForEach-Object { New-QdfFileCandidate -File $_ })
         }
         elseif ($MaxDetailsPerCategory -gt 0) {
-            $details = @($files | Sort-Object -Property Size -Descending | Select-Object -First $MaxDetailsPerCategory)
+            $details = @($files | Sort-Object -Property Length -Descending | Select-Object -First $MaxDetailsPerCategory | ForEach-Object { New-QdfFileCandidate -File $_ })
         }
 
         $categories.Add([pscustomobject]@{

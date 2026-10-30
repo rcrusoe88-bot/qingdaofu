@@ -62,18 +62,29 @@ public sealed class QdfPathLease : IDisposable {
         Inspect(handle);
         return handle;
     }
-    static void RejectReparseSubtree(string directory) {
+    static void RejectReparseSubtree(string directory, List<string> readOnlyEntries) {
         foreach (var entry in new System.IO.DirectoryInfo(directory).EnumerateFileSystemInfos()) {
-            if (((uint)entry.Attributes & 0x400u) != 0) throw new IOException("Subtree contains a reparse point.");
+            uint attributes = (uint)entry.Attributes;
+            if ((attributes & 0x400u) != 0) throw new IOException("Subtree contains a reparse point.");
             string fullPath = System.IO.Path.Combine(directory, entry.Name);
             using (OpenPath(fullPath)) { }
-            if (((uint)entry.Attributes & 0x10u) != 0) RejectReparseSubtree(fullPath);
+            if ((attributes & 0x1u) != 0) readOnlyEntries.Add(fullPath);
+            if ((attributes & 0x10u) != 0) RejectReparseSubtree(fullPath, readOnlyEntries);
         }
     }
     public static void DeleteDirectoryVerified(string directory) {
         var lease = new QdfPathLease(directory);
         using (lease) {
-            RejectReparseSubtree(directory);
+            var readOnlyEntries = new List<string>();
+            RejectReparseSubtree(directory, readOnlyEntries);
+            // Windows refuses Directory.Delete while any entry is read-only.
+            // The executor only reaches this point after proving every entry is
+            // a candidate, and the reparse walk above succeeded, so clearing
+            // the bit here is part of removing this verified subtree. The
+            // attributes are touched only after the whole walk passed.
+            foreach (var entry in readOnlyEntries) {
+                File.SetAttributes(entry, File.GetAttributes(entry) & ~FileAttributes.ReadOnly);
+            }
             System.IO.Directory.Delete(directory, true);
         }
     }

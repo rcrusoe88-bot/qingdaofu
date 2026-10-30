@@ -170,22 +170,21 @@ try {
             if ($RuleIds.Count -eq 0) {
                 throw 'No cleanup rules were selected.'
             }
-            $names = @()
-            $ruleset = Read-QdfJsonFile -Path $script:QdfRulesPath
-            foreach ($ruleId in $RuleIds) {
-                $rule = Get-QdfRuleById -Rules @(Get-QdfPropertyValue -Object $ruleset -Name 'rules' -DefaultValue @()) -RuleId $ruleId
-                if ($null -ne $rule) {
-                    $names += [string](Get-QdfPropertyValue -Object $rule -Name 'name' -DefaultValue '')
-                }
-            }
-            Write-QdfCliLine -Object @{
-                type = 'progress'; phase = 'clean'; ruleId = ($RuleIds -join ',')
-                ruleName = ($names -join '、'); index = 1; total = 1
-            }
+            # Clean now walks and removes in one pass: no scan is repeated here,
+            # and progress comes from the walk itself (rule index + item count).
             $summary = Invoke-QdfClean `
                 -RulesPath $script:QdfRulesPath `
                 -SelectedRuleIds $RuleIds `
-                -DryRun:$DryRun -CancelPath $CancelPath
+                -DryRun:$DryRun -CancelPath $CancelPath `
+                -OnProgress {
+                    param($event)
+                    Write-QdfCliLine -Object @{
+                        type = 'progress'; phase = 'clean'
+                        ruleId = $event.RuleId; ruleName = $event.RuleName
+                        index = $event.Index; total = $event.Total
+                        items = $event.Items; bytes = $event.BytesFreed
+                    }
+                }
             $resultObject = @{ type = 'result' }
             foreach ($property in $summary.PSObject.Properties) {
                 $resultObject[$property.Name] = $property.Value
