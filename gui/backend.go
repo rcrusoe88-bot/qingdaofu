@@ -24,6 +24,8 @@ type psEvent struct {
 	RuleName string `json:"ruleName"`
 	Index    int    `json:"index"`
 	Total    int    `json:"total"`
+	Items    int    `json:"items"` // clean: candidates handled so far
+	Bytes    int64  `json:"bytes"` // clean: bytes freed so far
 	Message  string `json:"message"`
 }
 
