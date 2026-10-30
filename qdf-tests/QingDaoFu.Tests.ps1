@@ -250,7 +250,15 @@ Describe 'QingDaoFu executor' {
 
             $journal = @(Get-Content -LiteralPath ($result.ReceiptPath + '.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
             $unitPath = Join-Path $fixture.CacheRoot 'pkg'
-            @($journal | Where-Object { $_.Type -eq 'outcome' -and $_.Path -eq $unitPath }).Count | Should Be 1
+            # The journal path can come back in a different (short/long) form on
+            # a CI runner, so match the subtree by suffix and byte count instead
+            # of comparing the whole path string.
+            $unitOutcomes = @($journal | Where-Object {
+                    $_.Type -eq 'outcome' -and
+                    ([string]$_.Path).EndsWith('\pkg', [System.StringComparison]::OrdinalIgnoreCase)
+                })
+            $unitOutcomes.Count | Should Be 1
+            $unitOutcomes[0].Size | Should Be 4620   # 70 files x 66 bytes
             Test-Path -LiteralPath $unitPath | Should Be $false
             Test-Path -LiteralPath $fixture.NewFile | Should Be $true
         }
