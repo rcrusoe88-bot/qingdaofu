@@ -30,6 +30,7 @@
   "confirmQuestion": "确定执行选中的清理项吗？",
   "doneHeading": "清理完成",
   "doneSummary": "处理结果",
+  "doneRulesHeading": "本次处理的规则",
   "openRecycleBin": "打开回收站",
   "closeButton": "关闭",
   "errorTitle": "清道夫遇到错误",

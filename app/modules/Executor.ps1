@@ -440,6 +440,9 @@ function Invoke-QdfClean {
         ScannedCandidateCount = 0; ProcessedCount = 0; SuccessfulCount = 0; FailedCount = 0; SkippedCount = 0
         BytesFreed = 0L; BytesFreedText = '0 B'; BytesRecycled = 0L; BytesRecycledText = '0 B'
         Failures = @(); ReceiptPath = $receiptPath; Error = ''; JournalIncomplete = $false
+        # Per-rule outcome, so the GUI's done screen can name what it actually
+        # processed instead of showing only aggregate counts.
+        RuleResults = @()
     }
     $receiptItems = New-Object System.Collections.Generic.List[object]
     $receipt = [pscustomobject]@{ Summary = $summary; Items = @(); ReceiptTruncated = $false }
@@ -454,8 +457,26 @@ function Invoke-QdfClean {
             if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) { $summary.State = 'Cancelled'; break }
             $rule = Get-QdfRuleById -Rules $rules -RuleId $ruleId
             $ruleIndex++
+            # Snapshot the running totals so the per-rule delta can be derived
+            # after this rule's roots are walked.
+            $successBefore = $summary.SuccessfulCount
+            $failedBefore = $summary.FailedCount
+            $skippedBefore = $summary.SkippedCount
+            $freedBefore = $summary.BytesFreed
+            $recycledBefore = $summary.BytesRecycled
             $roots = @(Resolve-QdfRuleRoots -Rule $rule)
-            if ($roots.Count -eq 0) { continue }
+            if ($roots.Count -eq 0) {
+                # Rule root does not exist: still report it, so the done screen
+                # can say "nothing to do" rather than silently omitting the rule.
+                $summary.RuleResults += [pscustomobject]@{
+                    RuleId = $ruleId
+                    RuleName = [string](Get-QdfPropertyValue -Object $rule -Name 'name' -DefaultValue $ruleId)
+                    Action = ''
+                    CandidateCount = 0; Successful = 0; Failed = 0; Skipped = 0
+                    BytesFreed = 0L; BytesRecycled = 0L; Handled = $false
+                }
+                continue
+            }
 
             $patterns = @(Get-QdfPropertyValue -Object $rule -Name 'filePatterns' -DefaultValue @('*'))
             $context = @{
@@ -517,6 +538,22 @@ function Invoke-QdfClean {
                 }
             }
             $summary.ScannedCandidateCount += [int]$context['CandidateCount']
+            $summary.RuleResults += [pscustomobject]@{
+                RuleId = $ruleId
+                RuleName = [string]$context['RuleName']
+                Action = [string]$context['Action']
+                CandidateCount = [int]$context['CandidateCount']
+                # Running totals minus what this rule started with: the delta is
+                # what this rule alone deleted, recycled or skipped.
+                Successful = $summary.SuccessfulCount - $successBefore
+                Failed = $summary.FailedCount - $failedBefore
+                Skipped = $summary.SkippedCount - $skippedBefore
+                BytesFreed = $summary.BytesFreed - $freedBefore
+                BytesRecycled = $summary.BytesRecycled - $recycledBefore
+                # A rule that scanned nothing (software not installed) says so,
+                # instead of looking like a rule that ran and found nothing.
+                Handled = ([int]$context['CandidateCount'] -gt 0)
+            }
             Write-QdfCleanProgress -Context $context
             if ($summary.State -eq 'Cancelled') { break }
         }

@@ -35,6 +35,14 @@
     --radius:    10px;
     --radius-sm: 6px;
     --shadow:    0 1px 2px rgba(60, 55, 40, .06), 0 2px 8px rgba(60, 55, 40, .05);
+
+    /* 动效 token：曲线用 emilkowalski 的强 ease-out，比浏览器内置的 ease 更有"到位"感。
+       时长三档——120ms 微反馈 / 220ms 短 / 420ms 长。 */
+    --ease-out:  cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in:   cubic-bezier(0.55, 0, 1, 0.45);
+    --dur-micro: 120ms;
+    --dur-short: 220ms;
+    --dur-long:  420ms;
 }
 
 * { box-sizing: border-box; }
@@ -84,10 +92,29 @@ body {
 }
 
 .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
     font-size: 15px;
     font-weight: 600;
     letter-spacing: .06em;
     color: var(--ink);
+}
+/* 图标 28px：与 64px 高的标题栏成比例，比 15px 的字重略重但不过界。
+   加一圈极淡的描边，让它在浅色 tabbar 上不会和背景糊在一起。 */
+.brand-mark {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: block;
+}
+.brand-words { display: flex; flex-direction: column; line-height: 1.05; }
+.brand-sub {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 8px;
+    letter-spacing: .18em;
+    color: var(--ink-3);
+    margin-top: 2px;
 }
 
 .tabbar-end { justify-self: end; }
@@ -364,9 +391,14 @@ input[type=checkbox]:checked::after {
     background: var(--surface);
     color: var(--ink);
     cursor: pointer;
-    transition: background .15s, border-color .15s;
+    transition: background .15s, border-color .15s, transform .12s var(--ease-out), box-shadow .12s var(--ease-out);
 }
 .btn:hover { background: var(--surface-2); }
+
+/* 按压反馈（プレスフィードバック）——保持中心的缩小与阴影变浅同时发生。
+   hover 只改颜色不缩放，press 才动 transform，两个时长分开。 */
+.btn:active:not(:disabled) { transform: scale(.97); box-shadow: 0 1px 2px rgba(60, 55, 40, .05); }
+.btn.primary:active:not(:disabled) { box-shadow: none; }
 
 .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
 .btn.ghost:hover { background: rgba(251, 242, 227, .7); color: var(--ink); }
@@ -392,6 +424,62 @@ input[type=checkbox]:checked::after {
 .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .bar.indet > i { width: 36%; animation: bar-slide 1.25s ease-in-out infinite alternate; }
 @keyframes bar-slide { from { margin-left: 0; } to { margin-left: 64%; } }
+
+/* 扫描线（スキャンライン）——一条线匀速扫过清单，扫过的行显形。
+   线走 transform，不碰 top，避免每条进度都触发布局。 */
+.scan-sweep { position: relative; overflow: hidden; }
+.scan-sweep::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 10px 2px rgba(94, 112, 56, .28);
+    transform: translateY(0);
+    animation: scan-sweep-move 1.6s linear infinite;
+    pointer-events: none;
+    z-index: 1;
+}
+@keyframes scan-sweep-move { from { transform: translateY(0); } to { transform: translateY(var(--sweep-h, 220px)); } }
+
+/* 列表顺序显示（リスト順次表示）——扫描完成后，规则行从上往下逐行位移就位。
+   每行移动相同距离、间隔 50ms；总长不超过 500ms，延迟再久用户会觉得慢。 */
+.rule.enter { animation: rule-enter 300ms var(--ease-out) both; }
+@keyframes rule-enter {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 焦点光环（フォーカスハロー）——核验过的一行，光环从轮廓扩散后淡出。
+   内层实线描边 + 外层柔光，两个伪元素接力，比单层 2px 边框在浅色底上明显。 */
+.rule { position: relative; }
+.rule.verified::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--safe);
+    pointer-events: none;
+    animation: rule-halo .6s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.rule.verified::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border: 1px solid var(--safe);
+    box-shadow: 0 0 0 3px rgba(94, 112, 56, .18);
+    pointer-events: none;
+    animation: rule-halo-glow .6s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+@keyframes rule-halo {
+    from { opacity: .9; transform: scale(1); }
+    to   { opacity: 0;  transform: scale(1.012); }
+}
+@keyframes rule-halo-glow {
+    from { opacity: 1;  transform: scale(1.004); }
+    to   { opacity: 0;  transform: scale(1.03); }
+}
 
 /* 扫描 / 清理的逐条清单——Mole「优化」页那种打勾观感 */
 .checklist { margin-top: 14px; display: flex; flex-direction: column; gap: 1px; }
@@ -490,6 +578,44 @@ input[type=checkbox]:checked::after {
 .fail-row .p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--danger); }
 .fail-row .why { flex: none; color: var(--ink-2); }
 
+/* ---------- 完成页：本次处理了哪些规则 ---------- */
+
+.done-list { padding: 4px 18px; }
+.done-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line-2);
+    font-size: 13.5px;
+    /* 缩小淡出退场（縮小フェード退場）：位置不变，缩放与透明度同时下降。 */
+    transition: transform var(--dur-long) var(--ease-in), opacity var(--dur-long) var(--ease-in);
+}
+.done-list .done-row:last-child { border-bottom: 0; }
+.done-row.gone { transform: scale(.4); opacity: 0; }
+.done-mark { flex: none; width: 15px; text-align: center; color: var(--safe); font-size: 12px; }
+.done-name { font-weight: 500; }
+.done-state {
+    flex: none;
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--ink-2);
+}
+.done-state.ok { color: var(--safe); border-color: rgba(94, 112, 56, .4); }
+.done-state.skip { color: var(--warn); border-color: rgba(138, 101, 32, .4); }
+.done-state.fail { color: var(--danger); border-color: rgba(163, 74, 62, .4); }
+.done-state.none { color: var(--ink-3); }
+.done-size { margin-left: auto; font-family: var(--mono, monospace); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.done-tally {
+    padding: 12px 18px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-2);
+}
+.done-tally b { font-size: 17px; color: var(--safe); font-variant-numeric: tabular-nums; }
+
 /* ---------- 空态 ---------- */
 
 .empty { padding: 46px 20px; text-align: center; color: var(--ink-2); }
@@ -524,4 +650,17 @@ input[type=checkbox]:checked::after {
     color: #F7E3DF;
     font-size: 12px;
     font-weight: 700;
+}
+
+/* 减少动态：去掉位移与循环动画，只留帮助理解的颜色变化。
+   扫描线退成一条静止的线，光环退成静态描边——功能状态照常改变。 */
+@media (prefers-reduced-motion: reduce) {
+    .scan-sweep::before { animation: none; top: auto; bottom: 0; }
+    .rule.verified::after,
+    .rule.verified::before { animation: none; opacity: .55; }
+    .check-item.active .mark::after { animation: none; }
+    .bar.indet > i { animation: none; }
+    /* 完成页退场：reduced-motion 下 JS 会直接加 .gone，这里让位移不生效、
+       只保留透明度变化，数字直接给终值。 */
+    .done-row.gone { transform: none; opacity: .45; }
 }

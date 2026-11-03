@@ -15,6 +15,7 @@ let scanSeen = [];            // 扫描中已出现的规则名，用于逐条�
 let selected = new Set();     // 已勾选的规则 id
 let cleanResult = null;
 let cleanProgress = null;     // 清理中最近一次进度事件（规则序号 + 已处理条目）
+let doneExitTimers = [];      // 完成页退场动画的计时器，重渲染前统一撤掉
 let historyRows = null;
 let orphanState = 'idle';     // 已卸载残留子态：idle / scanning / done
 let orphanResult = null;
@@ -158,7 +159,7 @@ function viewScanning() {
         <div class="hero-value">${n}${total ? ` / ${total}` : ''}</div>
         <div class="hero-sub">${esc(last.name || '')}</div>
     </div>
-    <div class="card"><div class="pad">${bar}<div class="checklist">${items}${left}</div></div></div>`;
+    <div class="card"><div class="pad">${bar}<div class="checklist scan-sweep" id="scanSweep">${items}${left}</div></div></div>`;
 }
 
 function viewCleaning() {
@@ -334,6 +335,46 @@ function viewDone() {
                 `<div><dt>${esc(k)}</dt><dd class="${danger ? 'danger' : ''}">${esc(v)}</dd></div>`).join('')}</div>
             <div class="footer-note">${esc(T.receiptPath || '')}：${esc(r.ReceiptPath || '')}</div>
         </div>
+    </div>${doneRuleList(r)}`;
+}
+
+/* 本次处理了哪些规则——逐条列出，而不是只给四个统计数字。
+   缩小淡出退场（縮小フェード退場）在这里退场：每条已处理的规则收敛成一点消失，
+   底部「已释放」同步累加。 */
+function doneRuleList(r) {
+    const items = arr(r.RuleResults);
+    if (!items.length) return '';
+    const rows = items.map((it) => {
+        const n = Number(it.Successful) || 0;
+        const failed = Number(it.Failed) || 0;
+        const skipped = Number(it.Skipped) || 0;
+        const freed = Number(it.BytesFreed) || 0;
+        const recycled = Number(it.BytesRecycled) || 0;
+        const bytes = freed > 0 ? fmtSize(freed) : (recycled > 0 ? fmtSize(recycled) : '');
+        // 没命中任何文件（软件没装）要说出来，不能看起来像"查过但没发现"
+        const state = !it.Handled
+            ? `<span class="done-state none">未发现目标</span>`
+            : failed > 0
+                ? `<span class="done-state fail">失败 ${failed}</span>`
+                : recycled > 0 && freed <= 0
+                    ? `<span class="done-state ok">已移入回收站</span>`
+                    : skipped > 0
+                        ? `<span class="done-state skip">跳过 ${skipped}</span>`
+                        : `<span class="done-state ok">已处理 ${n}</span>`;
+        return `<div class="done-row" data-rule-id="${esc(it.RuleId)}">
+            <span class="done-mark">✓</span>
+            <span class="done-name">${esc(it.RuleName || it.RuleId)}</span>
+            ${state}
+            <span class="done-size">${esc(bytes)}</span>
+        </div>`;
+    }).join('');
+    return `<div class="card">
+        <div class="group-head">
+            <span class="group-title">${esc(T.doneRulesHeading || '本次处理')}</span>
+            <span class="group-meta">${items.length} ${esc(T.itemSuffix || '')}</span>
+        </div>
+        <div class="done-list" id="doneList">${rows}</div>
+        <div class="done-tally">${esc(T.summaryFreed || '已释放')} <b id="doneTally">0 B</b></div>
     </div>`;
 }
 
@@ -516,6 +557,9 @@ async function startScan() {
 function onScanProgress(ev) {
     scanSeen.push({ name: ev.ruleName || ev.ruleId || '', total: ev.total || 0 });
     if (scanState === 'scanning') renderClean();
+    // 扫描线的行程要用容器的真实高度，写死像素会在长清单上扫不到底。
+    const sweep = $('scanSweep');
+    if (sweep) sweep.style.setProperty('--sweep-h', sweep.scrollHeight + 'px');
 }
 
 function onCleanProgress(ev) {
@@ -535,6 +579,24 @@ function onScanDone(result) {
     receiptOpen = null;
     historyRows = null;           // 新的操作会写进日志，下次进记录页重读
     renderClean();
+    staggerRules();               // 扫描结果从上往下逐行就位，像一条条查过之后摆上来
+}
+
+/* 列表顺序显示（リスト順次表示）——每行从下方位移就位，间隔 50ms。
+   只跑一次：切页签或重新勾选都走 renderClean()，不会重播，避免变成噪音。 */
+function staggerRules() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const rows = document.querySelectorAll('.rule');
+    rows.forEach((row, i) => {
+        row.classList.remove('enter');
+        void row.offsetWidth;                 // 强制回流，动画才能从零重播
+        row.style.animationDelay = Math.min(i * 50, 500) + 'ms';
+        row.classList.add('enter');
+        row.addEventListener('animationend', () => {
+            row.classList.remove('enter');
+            row.style.animationDelay = '';
+        }, { once: true });
+    });
 }
 
 async function startClean() {
@@ -580,6 +642,64 @@ function onCleanDone(result) {
     selected = new Set();
     historyRows = null;
     renderClean();
+    playDoneExit();
+}
+
+/* 缩小淡出退场（縮小フェード退場）——已处理的规则逐条收敛消失，底部「已释放」
+   同步累加。位置保持不变，所以下面的行不会突然跳上来。 */
+function playDoneExit() {
+    const list = $('doneList');
+    const tally = $('doneTally');
+    // RuleResults is absent (older receipt) or the list never rendered: nothing
+    // to play. Guarding here also keeps the function safe if the DOM is stubbed.
+    if (!list || typeof list.querySelectorAll !== 'function') return;
+    // 上一次退场还没跑完就重渲染时，先撤掉所有旧计时器，
+    // 否则多个动画叠加，行会在错误的时间点消失。
+    doneExitTimers.forEach(clearTimeout);
+    doneExitTimers = [];
+    const rows = [...list.querySelectorAll('.done-row')];
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reduce || !rows.length) {
+        rows.forEach((row) => row.classList.add('gone'));
+        if (tally) tally.textContent = (cleanResult && cleanResult.BytesFreedText) || '0 B';
+        return;
+    }
+
+    // 逐条取后端给的字节数。只累加永久删除的部分——回收站文件仍占空间，
+    // 把 BytesRecycled 算进"已释放"会和 hero 的 BytesFreed 矛盾。
+    const per = arr(cleanResult && cleanResult.RuleResults);
+    const freed = rows.map((row) => {
+        const it = per.find((x) => String(x.RuleId) === String(row.dataset.ruleId));
+        return Number(it && it.BytesFreed) || 0;
+    });
+    const finalText = (cleanResult && cleanResult.BytesFreedText) || fmtSize(freed.reduce((s, b) => s + b, 0));
+
+    rows.forEach((row, i) => {
+        doneExitTimers.push(setTimeout(() => {
+            row.classList.add('gone');
+            // 只从已累加值滚到下一个值，最后一帧自然落在总数上。
+            // 不要再用 finalText 覆盖：那会和动画算出的值不一致，出现回跳。
+            if (tally) animateNumber(tally, freed.slice(0, i).reduce((s, b) => s + b, 0), freed.slice(0, i + 1).reduce((s, b) => s + b, 0), 400);
+        }, 120 + i * 220));
+    });
+    // 最后一条落地后补一次，避免浮点误差让末位差一点
+    doneExitTimers.push(setTimeout(() => {
+        if (tally) tally.textContent = finalText;
+    }, 120 + rows.length * 220 + 420));
+}
+
+/* 数字滚动：ease-out 让数值快速冲到接近目标再缓缓停下，比线性更有"称重"感。 */
+function animateNumber(el, from, to, duration, done) {
+    if (from === to) { el.textContent = fmtSize(to); if (done) done(); return; }
+    const start = performance.now();
+    (function tick(now) {
+        const p = Math.min((now - start) / duration, 1);
+        const e = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmtSize(from + (to - from) * e);
+        if (p < 1) requestAnimationFrame(tick);
+        else if (done) done();
+    })(start);
 }
 
 /* ---------------- 已卸载残留 / 回收站 / 白名单 ---------------- */
@@ -693,8 +813,26 @@ document.addEventListener('change', (e) => {
     const cb = e.target.closest('input[type=checkbox][data-rule-id]');
     if (!cb) return;
     if (cb.checked) selected.add(cb.dataset.ruleId); else selected.delete(cb.dataset.ruleId);
+    const justChecked = cb.checked;
     renderClean();
+    // 焦点光环（フォーカスハロー）：勾上的那一行闪光，表示「这一项你确认过了」。
+    // 必须等 innerHTML 重渲染后再加 class，否则会被立刻抹掉。
+    if (justChecked) pulseRule(cb.dataset.ruleId);
 });
+
+/* 光环只在看得见的前提下闪——reduced-motion 下降级成一行不动的静态描边。 */
+function pulseRule(ruleId) {
+    const row = document.querySelector(`.rule[data-rule-id="${CSS.escape(ruleId)}"]`);
+    if (!row) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        row.style.boxShadow = 'inset 0 0 0 2px var(--safe)';
+        return;
+    }
+    row.classList.remove('verified');
+    void row.offsetWidth;                 // 强制回流，让动画能从零重播
+    row.classList.add('verified');
+    row.addEventListener('animationend', () => row.classList.remove('verified'), { once: true });
+}
 
 $('errorDismiss').addEventListener('click', () => $('errorBanner').classList.add('hidden'));
 
