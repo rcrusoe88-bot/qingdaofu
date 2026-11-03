@@ -1,4 +1,4 @@
-$projectRoot = Split-Path -Parent $PSScriptRoot
+﻿$projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $projectRoot 'app\QingDaoFu.ps1')
 
 function New-QdfTestFixture {
@@ -194,6 +194,85 @@ Describe 'QingDaoFu executor' {
 
             Test-Path -LiteralPath $fixture.OldFile | Should Be $false
             $result.SuccessfulCount | Should Be 1
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'reports one RuleResults row per selected rule' {
+        $fixture = New-QdfTestFixture
+        try {
+            # Two rules: one that hits, one whose root does not exist.
+            $ruleset = Read-QdfJsonFile -Path $fixture.RulesPath
+            $ghost = $ruleset.rules[0].PSObject.Copy()
+            $ghost.id = 'fixture-missing'
+            $ghost.name = '不存在的目录'
+            $ghost.pathTemplates = @((Join-Path $fixture.Root 'nope\gone'))
+            $ruleset.rules += $ghost
+            [System.IO.File]::WriteAllText($fixture.RulesPath, ($ruleset | ConvertTo-Json -Depth 8))
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache', 'fixture-missing') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            $rows = @($result.RuleResults)
+            $rows.Count | Should Be 2
+
+            $hit = @($rows | Where-Object { $_.RuleId -eq 'fixture-cache' })[0]
+            $hit.Successful | Should Be 1
+            $hit.Handled | Should Be $true
+            $hit.BytesFreed | Should Be $result.BytesFreed
+
+            # A rule with no root must still appear, marked as not handled,
+            # so the done screen can say "nothing to do" instead of hiding it.
+            $miss = @($rows | Where-Object { $_.RuleId -eq 'fixture-missing' })[0]
+            $miss.Handled | Should Be $false
+            $miss.CandidateCount | Should Be 0
+            $miss.Successful | Should Be 0
+
+            # Per-rule deltas must add up to the aggregate, or the done screen
+            # would show numbers that do not reconcile.
+            ($rows | Measure-Object -Property Successful -Sum).Sum | Should Be $result.SuccessfulCount
+        }
+        finally {
+            Remove-QdfTestFixture -Fixture $fixture
+        }
+    }
+
+    It 'keeps RuleResults deltas separate per rule' {
+        $fixture = New-QdfTestFixture
+        try {
+            $ruleset = Read-QdfJsonFile -Path $fixture.RulesPath
+            $second = $ruleset.rules[0].PSObject.Copy()
+            $second.id = 'fixture-cache-2'
+            $second.name = '第二个缓存规则'
+            $secondRoot = Join-Path $fixture.Root 'cache2'
+            New-Item -ItemType Directory -Path $secondRoot -Force | Out-Null
+            $f = Join-Path $secondRoot 'old2.tmp'
+            Set-Content -LiteralPath $f -Value ('y' * 32) -Encoding ASCII
+            (Get-Item -LiteralPath $f).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-10)
+            $second.pathTemplates = @($secondRoot)
+            $ruleset.rules += $second
+            [System.IO.File]::WriteAllText($fixture.RulesPath, ($ruleset | ConvertTo-Json -Depth 8))
+
+            $result = Invoke-QdfClean `
+                -RulesPath $fixture.RulesPath `
+                -SelectedRuleIds @('fixture-cache', 'fixture-cache-2') `
+                -SkipOperationLog `
+                -ReceiptDirectory $fixture.ReceiptRoot
+
+            $rows = @($result.RuleResults)
+            $rows.Count | Should Be 2
+            $a = @($rows | Where-Object { $_.RuleId -eq 'fixture-cache' })[0]
+            $b = @($rows | Where-Object { $_.RuleId -eq 'fixture-cache-2' })[0]
+            # Each rule reports its own bytes, not the running total.
+            $a.BytesFreed | Should Not Be $b.BytesFreed
+            ($a.BytesFreed + $b.BytesFreed) | Should Be $result.BytesFreed
+            $a.Successful | Should Be 1
+            $b.Successful | Should Be 1
         }
         finally {
             Remove-QdfTestFixture -Fixture $fixture

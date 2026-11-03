@@ -96,3 +96,6 @@ mo.cmd
 
 # Read-only upstream checkout used for feature comparison
 .upstream-mole/
+
+# Local Chrome profile used for CDP scraping (contains login cookies, never commit)
+.cdp-profile/
