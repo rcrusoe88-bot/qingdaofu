@@ -23,10 +23,13 @@ func main() {
 		MinWidth:      960,
 		MinHeight:     680,
 		DisableResize: false,
-		AssetServer:   &assetserver.Options{Assets: assets},
-		// Matches the top of the CSS background gradient so there is no
+		// Frameless so the page gradient reaches the top edge; the tab bar is
+		// the drag region and carries the window controls.
+		Frameless:   true,
+		AssetServer: &assetserver.Options{Assets: assets},
+		// Matches the base of the dark world gradient so there is no
 		// white flash before the webview paints.
-		BackgroundColour: &options.RGBA{R: 237, G: 240, B: 214, A: 255},
+		BackgroundColour: &options.RGBA{R: 23, G: 20, B: 15, A: 255},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		OnBeforeClose:    app.beforeClose,
@@ -36,6 +39,8 @@ func main() {
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			// Keep WebView2 in dark mode so scrollbars and native controls match.
+			Theme: windows.Dark,
 		},
 	})
 	if err != nil {

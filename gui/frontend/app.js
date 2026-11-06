@@ -22,6 +22,23 @@ let orphanResult = null;
 let receiptOpen = null;       // 当前展开的回执路径
 let ruleNames = {};           // 规则 id → 中文名（历史与回执里只有 id）
 
+// 状态页：每 3 秒读一次只读快照，离开页签就停
+let statusData = null;
+let statusTimer = null;
+let statusBusy = false;
+let statusHist = { cpu: [], mem: [], net: [] };
+
+// 分析页：磁盘树图 + 最大文件 + 卸载残留
+let analyzeNode = null;
+let analyzeDrives = null;
+let analyzeLoading = false;
+let analyzeError = '';
+let analyzeTab = 'tree';        // tree | largest | orphans | drives
+let analyzeMulti = false;
+let analyzeSelected = new Set();
+let analyzeReq = 0;
+let analyzeCtxNode = null;
+
 function operationState(state) {
     return ({ Completed: '已完成', Partial: '部分失败', Cancelled: '已停止（部分完成）', Incomplete: '未完成，部分结果可能未知', Failed: '执行失败' })[state] || state || '已完成';
 }
@@ -54,6 +71,10 @@ function fmtSize(bytes) {
     if (n >= MB) return group((n / MB).toFixed(1)) + ' MB';
     if (n >= KB) return group((n / KB).toFixed(1)) + ' KB';
     return n + ' B';
+}
+
+function fmtCount(n) {
+    return Number(n || 0).toLocaleString('zh-CN');
 }
 
 function fmtWhen(iso) {
@@ -105,10 +126,13 @@ function showError(message) {
 
 /* ---------------- Tab 路由 ---------------- */
 
-const RENDER = { clean: renderClean, analyze: renderAnalyze, history: renderHistory };
+const RENDER = { clean: renderClean, analyze: renderAnalyze, history: renderHistory, status: renderStatus };
 
 function showTab(next) {
     tab = next;
+    // 每个页签一套世界底色（CSS 用 body[data-tab] 切渐变与 hero 器物）
+    if (document.body) document.body.dataset.tab = next;
+    if (next === 'status') startStatusPolling(); else stopStatusPolling();
     document.querySelectorAll('.tab').forEach((b) => {
         b.setAttribute('aria-selected', String(b.dataset.tab === next));
     });
@@ -408,39 +432,378 @@ function renderCleanFooter() {
 
 /* ---------------- 分析页 ---------------- */
 
+const TM_COLORS = [
+    'rgba(126, 163, 148, .42)',
+    'rgba(176, 138, 106, .42)',
+    'rgba(150, 126, 150, .42)',
+    'rgba(120, 140, 170, .42)',
+    'rgba(160, 150, 110, .40)',
+];
+
+function analyzeCrumbs(path) {
+    const all = { label: T.allDisks || '所有磁盘', path: '' };
+    if (!path) return [all];
+    const parts = String(path).split(/[\\/]/).filter(Boolean);
+    const out = [all];
+    let acc = '';
+    for (const p of parts) {
+        acc = acc ? acc + '\\' + p : p;
+        if (acc.length === 2 && acc[1] === ':') acc += '\\';
+        out.push({ label: p, path: acc });
+    }
+    return out;
+}
+
+async function loadAnalyze(path) {
+    const req = ++analyzeReq;
+    analyzeLoading = true;
+    analyzeError = '';
+    analyzeTab = 'tree';
+    analyzeSelected.clear();
+    renderAnalyze();
+    try {
+        const node = await QDF.analyze(path || '', 3);
+        if (req !== analyzeReq) return;
+        analyzeNode = node || null;
+    } catch (e) {
+        if (req === analyzeReq) analyzeError = String(e && e.message ? e.message : e);
+    } finally {
+        if (req === analyzeReq) {
+            analyzeLoading = false;
+            renderAnalyze();
+        }
+    }
+}
+
 function renderAnalyze() {
-    const scroll = $('analyzeScroll');
-    const orphanCandidates = arr(orphanResult && orphanResult.Candidates);
-
-    const orphanButton = `<button class="btn ghost" data-action="scan-orphans" ${orphanState === 'scanning' ? 'disabled' : ''}>${esc(orphanState === 'scanning' ? (T.statusScanning || '') : (T.orphanScan || ''))}</button>`;
-
-    if (!orphanResult) {
-        scroll.innerHTML = `<div class="card empty">
-            <div class="empty-title">${esc(T.orphanEmptyTitle || '还没有扫描')}</div>
-            <div>${esc(T.orphanEmptySub || '扫描 AppData 下可能属于已卸载软件的目录，只报告不删除。')}</div>
-        </div>`;
-        $('analyzeFooter').innerHTML = `<div class="footer-summary"></div>${orphanButton}`;
+    if (analyzeDrives === null) {
+        analyzeDrives = [];
+        QDF.analyzeDrives().then((d) => {
+            analyzeDrives = arr(d);
+            if (tab === 'analyze') renderAnalyze();
+        }).catch(() => {});
+    }
+    if (analyzeTab === 'tree' && !analyzeNode && !analyzeLoading && !analyzeError) {
+        loadAnalyze('');
         return;
     }
 
-    const orphanRows = orphanCandidates.length
-        ? orphanCandidates.map((c) => `<div class="afile">
+    const scroll = $('analyzeScroll');
+    const node = analyzeNode;
+    const totalText = node
+        ? `${fmtCount(node.Files)} ${T.itemSuffix || ''} · ${fmtSize(node.Size)}`
+        : (T.allDisks || '所有磁盘');
+    const dirs = node ? arr(node.Children).filter((c) => c.IsDir).slice(0, 20) : [];
+    const dirList = dirs.map((c) => `<button class="an-dir-row" data-action="an-drill" data-path="${esc(c.Path)}">
+        <span class="an-dir-caret">›</span>
+        <span class="an-dir-name">${esc(c.Name)}</span>
+        <span class="an-dir-size">${esc(fmtSize(c.Size))}</span>
+    </button>`).join('');
+
+    const tabs = [
+        ['tree', T.anCurrent || '当前目录'],
+        ['largest', T.anLargest || '最大文件'],
+        ['orphans', T.orphanHeading || '卸载残留'],
+    ].map(([k, label]) => `<button class="an-tab ${analyzeTab === k ? 'on' : ''}"
+        data-action="an-tab" data-tab="${k}">${esc(label)}</button>`).join('');
+
+    const crumbs = analyzeCrumbs(node ? node.Path : '');
+    const crumbHtml = crumbs.map((c, i) =>
+        `<button class="an-crumb" data-action="an-crumb" data-path="${esc(c.path)}">${esc(c.label)}</button>` +
+        (i < crumbs.length - 1 ? '<span class="an-sep">›</span>' : '')
+    ).join('');
+
+    scroll.innerHTML = `<div class="an-wrap">
+        <aside class="an-side">
+            <div class="an-planet" aria-hidden="true"></div>
+            <div class="an-total">${esc(totalText)}</div>
+            <div class="an-side-tabs">${tabs}</div>
+            <div class="an-dir-list">${dirList}</div>
+        </aside>
+        <section class="an-main">
+            <div class="an-top">
+                <div class="an-crumbs">${crumbHtml}</div>
+                <div class="an-meta">${analyzeMeta(node)}</div>
+                <div class="an-tools">
+                    <button class="btn small ghost ${analyzeMulti ? 'on' : ''}" data-action="an-multi">${esc(T.anMulti || '多选')}</button>
+                    <button class="btn small ghost" data-action="an-refresh">${esc(T.refreshButton || '刷新')}</button>
+                </div>
+            </div>
+            <div class="an-body">${analyzeBody(node)}</div>
+        </section>
+    </div>`;
+
+    renderAnalyzeFooter();
+    if (analyzeTab === 'tree' && node) requestAnimationFrame(drawTreemap);
+}
+
+function analyzeMeta(node) {
+    if (!node) return '';
+    const drive = arr(analyzeDrives).find((d) => String(node.Path).toUpperCase().startsWith(String(d.Name).toUpperCase()));
+    const parts = [`${T.anFileSize || '文件'} ${fmtSize(node.Size)}`];
+    if (drive) parts.push(`${T.anUsed || '已用'} ${fmtSize(drive.Total - drive.Free)} / ${fmtSize(drive.Total)}`);
+    return parts.map(esc).join(' · ');
+}
+
+function analyzeBody(node) {
+    if (analyzeLoading) {
+        return `<div class="an-empty"><div class="an-empty-title">${esc(T.anLoading || '正在扫描…')}</div><div class="an-empty-sub">${esc(T.anScanNote || '只读扫描，不修改任何文件。')}</div></div>`;
+    }
+    if (analyzeError) {
+        return `<div class="an-empty"><div class="an-empty-title">${esc(T.anError || '读取失败')}</div><div class="an-empty-sub">${esc(analyzeError)}</div></div>`;
+    }
+    if (analyzeTab === 'orphans') return orphanBody();
+    if (analyzeTab === 'largest') return largestBody(node);
+    if (!node) return driveBody();
+    return `<div class="tm" id="tmBox"></div>`;
+}
+
+function driveBody() {
+    const drives = arr(analyzeDrives);
+    if (!drives.length) {
+        return `<div class="an-empty"><div class="an-empty-title">${esc(T.anNoDrive || '没有找到磁盘')}</div></div>`;
+    }
+    return `<div class="drive-grid">${drives.map((d) => {
+        const pct = d.Total ? Math.round(((d.Total - d.Free) / d.Total) * 100) : 0;
+        return `<button class="drive-card" data-action="an-drive" data-path="${esc(d.Path)}">
+            <span class="drive-name">${esc(d.Name)}</span>
+            <span class="drive-free">${esc(fmtSize(d.Free))} ${esc(T.anFree || '可用')}</span>
+            <span class="bar"><i style="width:${pct}%"></i></span>
+            <span class="drive-total">${esc(fmtSize(d.Total - d.Free))} / ${esc(fmtSize(d.Total))}</span>
+        </button>`;
+    }).join('')}</div>`;
+}
+
+function largestBody(node) {
+    const files = arr(node && node.Largest).slice(0, 120);
+    if (!files.length) {
+        return `<div class="an-empty"><div class="an-empty-title">${esc(T.anNoLargest || '没有找到大文件')}</div></div>`;
+    }
+    return `<div class="card lfiles">${files.map((f) => `<div class="lfile-row"
+        data-action="an-select" data-path="${esc(f.Path)}" data-dir="0">
+        <span class="lfile-name">${esc(f.Name)}</span>
+        <span class="lfile-path">${esc(f.Path)}</span>
+        <span class="lfile-size">${esc(fmtSize(f.Size))}</span>
+    </div>`).join('')}</div>`;
+}
+
+function orphanBody() {
+    const cands = arr(orphanResult && orphanResult.Candidates);
+    if (!orphanResult) {
+        return `<div class="an-empty">
+            <div class="an-empty-title">${esc(T.orphanEmptyTitle || '还没有扫描')}</div>
+            <div class="an-empty-sub">${esc(T.orphanEmptySub || '扫描 AppData 下可能属于已卸载软件的目录，只报告不删除。')}</div>
+        </div>`;
+    }
+    const rows = cands.length
+        ? cands.map((c) => `<div class="afile">
             <div class="afile-path">${esc(c.Path)}</div>
             <div class="afile-bar">
                 <span class="afile-size">${esc(c.SizeText || fmtSize(c.Size))}${c.SizeComplete ? '' : ' +'}</span>
             </div>
         </div>`).join('')
         : `<div class="empty"><div class="empty-title">${esc(T.orphanEmpty || '')}</div></div>`;
+    return `<div class="an-summary">${esc(T.orphanTotal || '')} ${cands.length} ${esc(T.itemSuffix || '')} · ${esc(orphanResult.TotalSizeText || fmtSize(orphanResult.TotalSize))} · ${esc(T.orphanNote || '')}</div>
+        <div class="card"><div style="padding:6px 18px">${rows}</div></div>`;
+}
 
-    scroll.innerHTML = `<div class="hero">
-        <div class="hero-label">${esc(T.orphanHeading || '')}</div>
-        <div class="hero-value hero-sm">${esc(orphanResult.TotalSizeText || fmtSize(orphanResult.TotalSize))}</div>
-        <div class="hero-sub">${esc(T.orphanTotal || '')} ${orphanCandidates.length} ${esc(T.itemSuffix || '')} · ${esc(T.orphanNote || '')}</div>
-    </div>
-    <div class="card"><div style="padding:6px 18px">${orphanRows}</div></div>`;
+function renderAnalyzeFooter() {
+    const f = $('analyzeFooter');
+    if (analyzeTab === 'orphans') {
+        const btn = `<button class="btn ghost" data-action="scan-orphans" ${orphanState === 'scanning' ? 'disabled' : ''}>${esc(orphanState === 'scanning' ? (T.statusScanning || '') : (T.orphanScan || ''))}</button>`;
+        f.innerHTML = `<div class="footer-summary"><span class="footer-note">${orphanResult ? esc(T.scannedAt || '') + ' ' + esc(fmtWhen(orphanResult.ScannedAt)) : ''}</span></div>${btn}`;
+        return;
+    }
+    const n = analyzeSelected.size;
+    const bytes = [...analyzeSelected].reduce((s, p) => {
+        const hit = analyzeByPath(p);
+        return s + (hit ? Number(hit.Size) || 0 : 0);
+    }, 0);
+    const summary = analyzeMulti && n
+        ? `<span class="footer-lead">${esc(T.selectedPrefix || '')} ${n} ${esc(T.itemSuffix || '')} · ${esc(fmtSize(bytes))}</span>`
+        : `<span class="footer-note">${esc(T.anHint || '右键可复制路径、移到回收站等')}</span>`;
+    const actions = analyzeMulti && n
+        ? `<button class="btn ghost" data-action="an-copy">${esc(T.anCopyPath || '复制路径')}</button>
+           <button class="btn ghost" data-action="an-recycle">${esc(T.anRecycle || '移到回收站')}</button>`
+        : '';
+    f.innerHTML = `<div class="footer-summary">${summary}</div>${actions}`;
+}
 
-    $('analyzeFooter').innerHTML = `<div class="footer-summary"><span class="footer-note">${esc(T.scannedAt || '')} ${esc(fmtWhen(orphanResult.ScannedAt))}</span></div>
-        ${orphanButton}`;
+function analyzeByPath(path) {
+    return arr(analyzeNode && analyzeNode.Children).find((c) => c.Path === path) ||
+        arr(analyzeNode && analyzeNode.Largest).find((f) => f.Path === path) || null;
+}
+
+function squarify(items, W, H) {
+    const total = items.reduce((s, i) => s + i.size, 0) || 1;
+    const area0 = W * H;
+    const rest = items.slice();
+    const out = [];
+    let x = 0, y = 0, w = W, h = H;
+    const rowArea = (row) => row.reduce((s, i) => s + i.size, 0) / total * area0;
+    const worst = (row, short, area) => {
+        const sum = row.reduce((s, i) => s + i.size, 0) || 1;
+        const thickness = area / short;
+        let v = 0;
+        for (const it of row) {
+            const len = (it.size / sum) * short;
+            if (len <= 0) continue;
+            v = Math.max(v, thickness / len, len / thickness);
+        }
+        return v;
+    };
+    while (rest.length) {
+        const row = [rest.shift()];
+        const short = Math.min(w, h);
+        let score = worst(row, short, rowArea(row));
+        while (rest.length) {
+            const cand = row.concat(rest[0]);
+            const next = worst(cand, short, rowArea(cand));
+            if (next > score) break;
+            row.push(rest.shift());
+            score = next;
+        }
+        const sum = row.reduce((s, i) => s + i.size, 0) || 1;
+        const ra = sum / total * area0;
+        if (w >= h) {
+            const colW = ra / h;
+            let yy = y;
+            for (const it of row) {
+                const hh = it.size / sum * h;
+                out.push({ item: it, x, y: yy, w: colW, h: hh });
+                yy += hh;
+            }
+            x += colW; w -= colW;
+        } else {
+            const rowH = ra / w;
+            let xx = x;
+            for (const it of row) {
+                const ww = it.size / sum * w;
+                out.push({ item: it, x: xx, y, w: ww, h: rowH });
+                xx += ww;
+            }
+            y += rowH; h -= rowH;
+        }
+    }
+    return out;
+}
+
+function drawTreemap() {
+    const box = $('tmBox');
+    if (!box || !analyzeNode) return;
+    const rect = box.getBoundingClientRect();
+    const W = Math.floor(rect.width), H = Math.floor(rect.height);
+    if (W < 40 || H < 40) return;
+    const all = arr(analyzeNode.Children).filter((c) => Number(c.Size) > 0);
+    const total = all.reduce((s, c) => s + (Number(c.Size) || 0), 0) || 1;
+    // Below 0.6% a cell is unreadable; fold those into one "其他" tile.
+    const floor = total * 0.006;
+    const main = all.filter((c) => Number(c.Size) >= floor);
+    const rest = all.filter((c) => Number(c.Size) < floor);
+    const items = main.map((c) => ({ node: c, size: Number(c.Size) || 0 }));
+    if (rest.length) {
+        const restSize = rest.reduce((s, c) => s + (Number(c.Size) || 0), 0);
+        items.push({
+            node: { Name: `其他 (${rest.length})`, Path: '', Size: restSize, IsDir: false },
+            size: restSize,
+        });
+    }
+    items.sort((a, b) => b.size - a.size);
+    const cells = squarify(items.slice(0, 60), W, H);
+    box.innerHTML = cells.map((r) => {
+        const n = r.item.node;
+        const cls = ['tm-cell'];
+        if (analyzeSelected.has(n.Path)) cls.push('selected');
+        if (r.w < 64 || r.h < 38) cls.push('tiny');
+        let hash = 0;
+        for (const ch of String(n.Name)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+        const bg = TM_COLORS[hash % TM_COLORS.length];
+        return `<div class="${cls.join(' ')}"
+            style="left:${r.x}px;top:${r.y}px;width:${Math.max(1, r.w - 2)}px;height:${Math.max(1, r.h - 2)}px;background:${bg}"
+            data-action="an-cell" data-path="${esc(n.Path)}" data-dir="${n.IsDir ? '1' : '0'}">
+            <span class="tm-name">${esc(n.Name)}</span>
+            <span class="tm-size">${esc(fmtSize(n.Size))}</span>
+        </div>`;
+    }).join('');
+}
+
+function onAnalyzeCell(el) {
+    const path = el.dataset.path;
+    if (!path) return;
+    if (analyzeMulti) { toggleAnalyzeSelect(path); return; }
+    if (el.dataset.dir === '1') loadAnalyze(path);
+}
+
+function toggleAnalyzeSelect(path) {
+    analyzeMulti = true;
+    if (analyzeSelected.has(path)) analyzeSelected.delete(path);
+    else analyzeSelected.add(path);
+    renderAnalyze();
+}
+
+async function copySelected() {
+    if (!analyzeSelected.size) return;
+    try {
+        await QDF.copyText([...analyzeSelected].join('\n'));
+    } catch (e) {
+        showError(String(e));
+    }
+}
+
+async function recycleSelected() {
+    if (!analyzeSelected.size) return;
+    const n = analyzeSelected.size;
+    if (!confirm(`将 ${n} 项移到回收站？可以在回收站还原。`)) return;
+    const errors = [];
+    for (const p of [...analyzeSelected]) {
+        try { await QDF.recyclePath(p); } catch (e) { errors.push(String(e)); }
+    }
+    analyzeSelected.clear();
+    if (errors.length) showError(errors.join('\n'));
+    loadAnalyze(analyzeNode ? analyzeNode.Path : '');
+}
+
+function showCtxMenu(x, y, path, isDir) {
+    const menu = $('ctxMenu');
+    if (!menu || !path) return;
+    analyzeCtxNode = { path, isDir };
+    menu.innerHTML = `<button data-action="ctx-copy">${esc(T.anCopyPath || '复制路径')}</button>
+        <button data-action="ctx-reveal">${esc(T.anReveal || '在资源管理器中显示')}</button>
+        <button data-action="ctx-recycle" class="danger">${esc(T.anRecycle || '移到回收站')}</button>`;
+    menu.classList.remove('hidden');
+    const w = menu.offsetWidth || 180;
+    const h = menu.offsetHeight || 110;
+    menu.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+}
+
+function hideCtxMenu() {
+    const menu = $('ctxMenu');
+    if (menu) menu.classList.add('hidden');
+}
+
+document.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.tm-cell, .an-dir-row, .lfile-row');
+    if (!el) return;
+    e.preventDefault();
+    showCtxMenu(e.clientX, e.clientY, el.dataset.path, el.dataset.dir === '1');
+});
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#ctxMenu')) hideCtxMenu();
+});
+
+let analyzeResizeBound = false;
+function bindAnalyzeResize() {
+    if (analyzeResizeBound) return;
+    analyzeResizeBound = true;
+    let t = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+            if (tab === 'analyze' && analyzeTab === 'tree') drawTreemap();
+        }, 120);
+    });
 }
 
 /* ---------------- 记录页 ---------------- */
@@ -530,6 +893,154 @@ async function renderReceipt(idx) {
             ${detail}
         </div>
     </div>`;
+}
+
+/* ---------------- 状态页 ---------------- */
+
+function fmtRate(bytes) { return fmtSize(bytes) + '/s'; }
+
+function fmtUptime(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d) return `${d}天${h}小时`;
+    if (h) return `${h}小时${m}分钟`;
+    return `${m}分钟`;
+}
+
+function pushHist(key, value) {
+    const a = statusHist[key];
+    a.push(Number(value) || 0);
+    while (a.length > 24) a.shift();
+}
+
+/* 柱状 sparkline：只表达趋势，不画坐标轴——和 Mole 的极简图表一致 */
+function spark(values, max) {
+    if (!values.length) return '';
+    const top = Math.max(Number(max) || 0, ...values, 1);
+    return `<div class="spark">${values.map((v) =>
+        `<i style="height:${Math.max(3, Math.min(100, (v / top) * 100))}%"></i>`).join('')}</div>`;
+}
+
+function startStatusPolling() {
+    stopStatusPolling();
+    loadStatus();
+    statusTimer = setInterval(loadStatus, 3000);
+}
+
+function stopStatusPolling() {
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+}
+
+async function loadStatus() {
+    if (statusBusy) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    statusBusy = true;
+    try {
+        const s = await QDF.status();
+        if (s) {
+            statusData = s;
+            pushHist('cpu', s.CPUPercent);
+            pushHist('mem', s.MemPercent);
+            pushHist('net', (Number(s.NetRecvPerSec) || 0) + (Number(s.NetSentPerSec) || 0));
+            if (tab === 'status') renderStatus();
+        }
+    } catch (e) {
+        showError(String(e));
+    } finally {
+        statusBusy = false;
+    }
+}
+
+function renderStatus() {
+    const scroll = $('statusScroll');
+    const f = $('statusFooter');
+    if (!statusData) {
+        scroll.innerHTML = `<div class="hero">
+            <div class="hero-label">${esc(T.statusHeading || '系统状态')}</div>
+            <div class="hero-value hero-sm">${esc(T.statusLoading || '正在读取系统状态…')}</div>
+        </div>`;
+        f.innerHTML = `<div class="footer-summary"><span class="footer-note">${esc(T.statusLoading || '')}</span></div>`;
+        return;
+    }
+
+    const s = statusData;
+    const score = Number(s.HealthScore) || 0;
+    const tone = score >= 85 ? 'safe' : score >= 60 ? 'warn' : 'danger';
+    const disk = arr(s.Disks)[0] || {};
+    const diskPct = Number(disk.UsedPercent) || 0;
+    const battery = s.BatteryPresent
+        ? `<div class="metric">${Number(s.BatteryPercent) || 0}<small>%</small></div>
+           <div class="status-sub">${esc(s.BatteryCharging ? (T.statusCharging || '已接电') : (T.statusOnBattery || '电池供电'))}</div>
+           <div class="bar"><i style="width:${Number(s.BatteryPercent) || 0}%"></i></div>`
+        : `<div class="metric">—</div><div class="status-sub">${esc(T.statusUnavailable || '暂不可用')}</div>`;
+
+    const procs = arr(s.TopProcesses);
+    const procRows = procs.length
+        ? procs.map((p) => `<div class="prow">
+            <span class="pname">${esc(p.Name)}</span>
+            <span class="pmem">${esc(fmtSize(p.Memory))}</span>
+            <span class="pcpu">${Number(p.CPU || 0).toFixed(1)}%</span>
+            <span class="ppid">${esc(String(p.PID))}</span>
+          </div>`).join('')
+        : `<div class="empty"><div class="empty-title">${esc(T.statusUnavailable || '暂不可用')}</div></div>`;
+
+    scroll.innerHTML = `<div class="hero">
+        <div class="hero-label">${esc(T.statusHealth || '健康度')}</div>
+        <div class="hero-value ${tone}">${score}</div>
+        <div class="hero-sub">${esc(s.HealthMessage || '')} · ${esc(T.statusUptime || '已运行')} ${esc(fmtUptime(s.UptimeSeconds))}</div>
+        <div class="status-meta">${esc(s.Platform || '')} · ${esc(s.CPUModel || '')} · ${Number(s.CPUCores) || 0} 线程</div>
+    </div>
+    <div class="status-grid">
+        <div class="card status-card">
+            <h4>${esc(T.statusCPU || 'CPU')}</h4>
+            <div class="metric">${Number(s.CPUPercent || 0).toFixed(0)}<small>%</small></div>
+            ${spark(statusHist.cpu, 100)}
+            <div class="status-sub">${esc(s.CPUModel || '')}</div>
+        </div>
+        <div class="card status-card">
+            <h4>${esc(T.statusMemory || '内存')}</h4>
+            <div class="metric">${Number(s.MemPercent || 0).toFixed(0)}<small>%</small></div>
+            <div class="bar"><i style="width:${Number(s.MemPercent) || 0}%"></i></div>
+            <div class="status-sub">${esc(fmtSize(s.MemUsed))} / ${esc(fmtSize(s.MemTotal))}</div>
+        </div>
+        <div class="card status-card">
+            <h4>${esc(T.statusDisk || '磁盘')} ${esc(disk.Device || '')}</h4>
+            <div class="metric">${esc(fmtSize(disk.Free))}<small>可用</small></div>
+            <div class="bar"><i style="width:${diskPct}%"></i></div>
+            <div class="status-sub">已用 ${esc(fmtSize(disk.Used))} / ${esc(fmtSize(disk.Total))}</div>
+        </div>
+        <div class="card status-card">
+            <h4>${esc(T.statusNetwork || '网络')}</h4>
+            <div class="metric">${esc(fmtRate(s.NetRecvPerSec || 0))}<small>下行</small></div>
+            ${spark(statusHist.net, Math.max(...statusHist.net, 1))}
+            <div class="status-sub">上行 ${esc(fmtRate(s.NetSentPerSec || 0))}</div>
+        </div>
+        <div class="card status-card">
+            <h4>${esc(T.statusBattery || '电池')}</h4>
+            ${battery}
+        </div>
+        <div class="card status-card">
+            <h4>虚拟内存</h4>
+            <div class="metric">${Number(s.SwapPercent || 0).toFixed(0)}<small>%</small></div>
+            <div class="bar"><i style="width:${Number(s.SwapPercent) || 0}%"></i></div>
+            <div class="status-sub">${esc(fmtSize(s.SwapUsed))} / ${esc(fmtSize(s.SwapTotal))}</div>
+        </div>
+    </div>
+    <div class="card status-processes">
+        <div class="group-head">
+            <span class="group-title">${esc(T.statusProcesses || '进程')}</span>
+            <span class="group-meta">${esc(T.statusProcessHint || '')}</span>
+        </div>
+        <div class="plist">
+            <div class="phead"><span>名称</span><span>内存</span><span>CPU</span><span>PID</span></div>
+            ${procRows}
+        </div>
+    </div>`;
+
+    f.innerHTML = `<div class="footer-summary"><span class="footer-note">${esc(T.statusHeading || '系统状态')} · ${esc(s.Hostname || '')}</span></div>
+        <button class="btn ghost" data-action="refresh-status">${esc(T.statusRefresh || '刷新')}</button>`;
 }
 
 /* ---------------- 动作 ---------------- */
@@ -777,6 +1288,36 @@ const ACTIONS = {
     'toggle-cat': (el) => { const b = el.closest('.cat-block'); if (b) b.classList.toggle('collapsed'); },
     'go-analyze': () => showTab('analyze'),
     'go-scan': () => { showTab('clean'); startScan(); },
+    'an-tab': (el) => { analyzeTab = el.dataset.tab; analyzeSelected.clear(); renderAnalyze(); },
+    'an-drill': (el) => loadAnalyze(el.dataset.path),
+    'an-drive': (el) => loadAnalyze(el.dataset.path),
+    'an-crumb': (el) => {
+        const p = el.dataset.path;
+        analyzeSelected.clear();
+        if (!p) { analyzeTab = 'drives'; analyzeNode = null; renderAnalyze(); }
+        else loadAnalyze(p);
+    },
+    'an-refresh': () => loadAnalyze(analyzeNode ? analyzeNode.Path : ''),
+    'an-multi': () => { analyzeMulti = !analyzeMulti; if (!analyzeMulti) analyzeSelected.clear(); renderAnalyze(); },
+    'an-cell': (el) => onAnalyzeCell(el),
+    'an-select': (el) => toggleAnalyzeSelect(el.dataset.path),
+    'an-copy': () => copySelected(),
+    'an-recycle': () => recycleSelected(),
+    'win-min': () => QDF.windowMinimise(),
+    'win-max': () => QDF.windowToggleMaximise(),
+    'win-close': () => QDF.windowClose(),
+    'ctx-copy': () => { if (analyzeCtxNode) QDF.copyText(analyzeCtxNode.path); hideCtxMenu(); },
+    'ctx-reveal': () => { if (analyzeCtxNode) QDF.revealPath(analyzeCtxNode.path); hideCtxMenu(); },
+    'ctx-recycle': async () => {
+        const node = analyzeCtxNode;
+        hideCtxMenu();
+        if (!node) return;
+        if (!confirm(`将「${node.path}」移到回收站？可以在回收站还原。`)) return;
+        try {
+            await QDF.recyclePath(node.path);
+            loadAnalyze(analyzeNode ? analyzeNode.Path : '');
+        } catch (e) { showError(String(e)); }
+    },
     'scan-orphans': () => startOrphanScan(),
     'empty-recyclebin': () => emptyRecycleBin(),
     'open-whitelist': () => QDF.openPath('whitelist'),
@@ -784,6 +1325,7 @@ const ACTIONS = {
     'open-logs': () => QDF.openPath('logs'),
     'open-receipt': (el) => renderReceipt(Number(el.dataset.idx)),
     'close-receipt': () => { receiptOpen = null; const b = $('receiptBox'); if (b) b.innerHTML = ''; },
+    'refresh-status': () => loadStatus(),
 };
 
 function setGroup(action, on) {
@@ -874,5 +1416,6 @@ function applyStrings() {
     QDF.on('app:stopping', (message) => showError(message));
     QDF.on('app:cancelled', () => { scanState = 'idle'; scanResult = null; selected = new Set(); renderClean(); });
 
+    bindAnalyzeResize();
     showTab('clean');
 })();
