@@ -6,7 +6,7 @@
 <title>清道夫</title>
 <link rel="stylesheet" href="app.css">
 </head>
-<body>
+<body data-tab="clean">
 <div id="app">
 
     <header class="tabbar">
@@ -21,8 +21,15 @@
             <button class="tab" role="tab" data-tab="clean"   data-i18n="tabClean">清理</button>
             <button class="tab" role="tab" data-tab="analyze" data-i18n="tabAnalyze">分析</button>
             <button class="tab" role="tab" data-tab="history" data-i18n="tabHistory">记录</button>
+            <button class="tab" role="tab" data-tab="status"  data-i18n="tabStatus">状态</button>
         </nav>
-        <div class="tabbar-end"></div>
+        <div class="tabbar-end">
+            <div class="win-controls">
+                <button class="win-btn" data-action="win-min" title="最小化" aria-label="最小化">&#x2013;</button>
+                <button class="win-btn" data-action="win-max" title="最大化" aria-label="最大化">&#x25A1;</button>
+                <button class="win-btn close" data-action="win-close" title="关闭" aria-label="关闭">&#x00D7;</button>
+            </div>
+        </div>
     </header>
 
     <main id="main">
@@ -40,7 +47,14 @@
             <div class="pane-scroll" id="historyScroll"></div>
             <footer class="pane-footer" id="historyFooter"></footer>
         </section>
+
+        <section class="tabpane hidden" data-pane="status">
+            <div class="pane-scroll" id="statusScroll"></div>
+            <footer class="pane-footer" id="statusFooter"></footer>
+        </section>
     </main>
+
+    <div id="ctxMenu" class="ctx hidden"></div>
 
     <div id="errorBanner" class="hidden">
         <span class="err-mark" aria-hidden="true">!</span>

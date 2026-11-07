@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/tw93/mole/windows/internal/analyze"
+	"github.com/tw93/mole/windows/internal/metrics"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -33,6 +37,10 @@ type App struct {
 	ctx  context.Context
 	root string // portable root: directory containing app/ and rules/
 	ps   *runner
+
+	status    *metrics.Collector
+	statusMu  sync.Mutex
+	analyzeMu sync.Mutex
 }
 
 func NewApp() *App { return &App{} }
@@ -41,6 +49,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.root = findRoot()
 	a.ps = newRunner(a.root)
+	a.status = metrics.NewCollector()
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -323,6 +332,109 @@ func (a *App) OpenPath(target string) error {
 		log.Printf("OpenPath %s failed: %v", target, err)
 	}
 	return err
+}
+
+// GetStatus returns one read-only system snapshot for the status page.
+// The collector keeps the previous network counters, so rates are meaningful
+// from the second call on.
+func (a *App) GetStatus() (metrics.Snapshot, error) {
+	a.statusMu.Lock()
+	defer a.statusMu.Unlock()
+	if a.status == nil {
+		a.status = metrics.NewCollector()
+	}
+	return a.status.Collect(), nil
+}
+
+// Analyze walks one directory and returns a read-only size tree for the treemap.
+// An empty path means the current user's home directory.
+func (a *App) Analyze(path string, depth int) (analyze.Node, error) {
+	a.analyzeMu.Lock()
+	defer a.analyzeMu.Unlock()
+	return analyze.Scan(path, depth)
+}
+
+func (a *App) AnalyzeDrives() []analyze.Drive {
+	return analyze.Drives()
+}
+
+func (a *App) CopyText(text string) error {
+	return runtime.ClipboardSetText(a.ctx, text)
+}
+
+func (a *App) RevealPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("路径为空")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return err
+	}
+	return explorerOpen("/select," + path)
+}
+
+// RecyclePath moves one file or directory to the Recycle Bin. It is the only
+// write action on the analyze page, so it refuses drive roots, system folders,
+// the user profile root and the app's own directory.
+func (a *App) RecyclePath(path string) error {
+	if !a.safeRecycleTarget(path) {
+		return fmt.Errorf("不允许移到回收站：%s", path)
+	}
+	script := `$p=$env:QDF_RECYCLE_PATH
+Add-Type -AssemblyName Microsoft.VisualBasic
+if (Test-Path -LiteralPath $p -PathType Container) {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p,[Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,[Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+} else {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p,[Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,[Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+}`
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.Env = append(os.Environ(), "QDF_RECYCLE_PATH="+path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("移到回收站失败：%v %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (a *App) safeRecycleTarget(path string) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	abs = strings.ToLower(filepath.Clean(abs))
+	if len(abs) <= 3 || abs[1] != ':' {
+		return false // drive root
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return false
+	}
+	home := strings.ToLower(filepath.Clean(os.Getenv("USERPROFILE")))
+	appRoot := strings.ToLower(filepath.Clean(a.root))
+	for _, eq := range []string{
+		`c:\windows`, `c:\program files`, `c:\program files (x86)`,
+		`c:\programdata`, `c:\users`, home, appRoot,
+	} {
+		if eq != "" && abs == eq {
+			return false
+		}
+	}
+	for _, prefix := range []string{
+		`c:\windows\`, `c:\program files\`, `c:\program files (x86)\`,
+		`c:\programdata\`, home + `\`, appRoot + `\`,
+	} {
+		if prefix != "\\" && strings.HasPrefix(abs, prefix) && abs != strings.TrimSuffix(prefix, `\`) {
+			// Files inside the current user profile are fine; only the profile
+			// root is blocked above. This branch intentionally does not block home\*.
+			if prefix == home+`\` {
+				continue
+			}
+			return false
+		}
+	}
+	// Do not touch another user's profile.
+	if home != "" && strings.HasPrefix(abs, `c:\users\`) && !strings.HasPrefix(abs, home+`\`) {
+		return false
+	}
+	return true
 }
 
 func dataRoot() string {

@@ -24,7 +24,16 @@
       rules: () => bindings.GetRules(),
       history: (n) => bindings.GetHistory(n || 50),
       receipt: (path) => bindings.GetReceipt(path),
+      status: () => bindings.GetStatus(),
+      analyze: (path, depth) => bindings.Analyze(path || "", depth || 3),
+      analyzeDrives: () => bindings.AnalyzeDrives(),
+      recyclePath: (path) => bindings.RecyclePath(path),
+      revealPath: (path) => bindings.RevealPath(path),
+      copyText: (text) => bindings.CopyText(text),
       openPath: (target) => bindings.OpenPath(target),
+      windowMinimise: () => window.runtime.WindowMinimise(),
+      windowToggleMaximise: () => window.runtime.WindowToggleMaximise(),
+      windowClose: () => window.runtime.Quit(),
       on: (event, handler) => EventsOn(event, handler),
     };
     return;
@@ -36,6 +45,7 @@
   const f = (Path, Size) => ({ Path, Name: Path.split('\\').pop(), Size, LastWriteTimeUtc: '2026-08-01T04:12:00.0000000Z' });
   const KB = 1024;
   const MB = 1024 * 1024;
+  const GB = 1024 * 1024 * 1024;
 
   const MOCK_SCAN = {
     type: 'result',
@@ -161,6 +171,65 @@
       ReceiptPath: 'C:\\Users\\wsj19\\AppData\\Local\\QingDaoFu\\receipts\\20260914-100200.json' },
   ];
 
+  // 分析页 mock：同一棵树既喂树图，也喂「最大文件」和左侧目录列表。
+  const anNode = (Name, sizeGB, Children) => ({
+    Name, Size: Math.round(sizeGB * GB), IsDir: true, Files: 0, Children: Children || []
+  });
+  const anFile = (Name, sizeMB) => ({
+    Name, Size: Math.round(sizeMB * MB), IsDir: false, Files: 0, Children: []
+  });
+  const MOCK_ANALYZE = anNode('wsj19', 59.8, [
+    anNode('AppData', 28.1, [
+      anNode('Local', 19.4, [anNode('Temp', 3.2), anNode('Packages', 9.1), anNode('Google', 4.3), anFile('cache.db', 120)]),
+      anNode('Roaming', 7.6, [anNode('Code', 5.2), anNode('npm-cache', 2.1)]),
+      anNode('LocalLow', 1.1, [anNode('Temp', 1.0)])
+    ]),
+    anNode('Documents', 6.53, [anFile('backup-2026q2.zip', 2400), anFile('report.pdf', 180), anNode('work', 3.4)]),
+    anNode('.workbuddy', 5.97, [anNode('cache', 3.2), anNode('models', 2.1)]),
+    anNode('.cache', 4.34, [anNode('huggingface', 2.4), anNode('pip', 1.1)]),
+    anNode('.codex', 4.23, [anNode('sessions', 2.6), anNode('logs', 1.1)]),
+    anNode('.vscode', 3.39, [anNode('extensions', 2.8)]),
+    anNode('.claude', 1.33, [anNode('projects', 0.9)]),
+    anNode('.local', 1.2, [anNode('share', 0.8)]),
+    anNode('.gemini', 1.07),
+    anNode('chrome-cdp-profile', 0.92)
+  ]);
+  MOCK_ANALYZE.Largest = [
+    { Name: 'win11-dev.vhdx', Path: 'D:\\Virtual\\win11-dev.vhdx', Size: Math.round(24.6 * GB) },
+    { Name: 'backup-2026q2.zip', Path: 'C:\\Users\\wsj19\\Documents\\backup-2026q2.zip', Size: Math.round(2.4 * GB) },
+    { Name: 'huggingface-cache.bin', Path: 'C:\\Users\\wsj19\\.cache\\huggingface\\cache.bin', Size: Math.round(2.1 * GB) },
+    { Name: 'chrome-cdp-profile.zip', Path: 'C:\\Users\\wsj19\\chrome-cdp-profile\\profile.zip', Size: Math.round(0.9 * GB) },
+    { Name: 'report.pdf', Path: 'C:\\Users\\wsj19\\Documents\\report.pdf', Size: Math.round(180 * MB) }
+  ];
+  (function setPaths(n, parent) {
+    n.Path = parent ? parent + '\\' + n.Name : 'C:\\Users\\wsj19';
+    (n.Children || []).forEach((c) => setPaths(c, n.Path));
+    return n;
+  })(MOCK_ANALYZE, '');
+  (function countFiles(n) {
+    let files = n.IsDir ? 0 : 1;
+    (n.Children || []).forEach((c) => { files += countFiles(c); });
+    n.Files = files;
+    return files;
+  })(MOCK_ANALYZE);
+  // The mock tree is intentionally small; give the header a realistic count.
+  MOCK_ANALYZE.Files = 72;
+  [40, 12, 8, 6, 5, 4, 3, 2, 2, 1].forEach((n, i) => {
+    if (MOCK_ANALYZE.Children[i]) MOCK_ANALYZE.Children[i].Files = n;
+  });
+  const MOCK_DRIVES = [
+    { Name: 'C:', Path: 'C:\\', Total: Math.round(194 * GB), Free: Math.round(66.2 * GB) },
+    { Name: 'D:', Path: 'D:\\', Total: Math.round(932 * GB), Free: Math.round(710 * GB) }
+  ];
+  function findAnalyze(n, path) {
+    if (!path || n.Path === path) return n;
+    for (const c of n.Children || []) {
+      const hit = findAnalyze(c, path);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   const listeners = {};
   const emit = (ev, payload) => setTimeout(() => (listeners[ev] || []).forEach((h) => h(payload)), 40);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -216,10 +285,66 @@
     rules: () => fetch('../../rules/rules.json').then((r) => r.text()),
     history: async () => MOCK_HISTORY,
     receipt: async () => ({ Summary: MOCK_CLEAN, Items: [], ReceiptTruncated: false }),
+    // A live-looking snapshot so the status page can be iterated in a browser.
+    status: async () => {
+      const t = Date.now() / 1000;
+      const GB = 1073741824;
+      const memTotal = 16.8 * GB;
+      const memPct = 86 + Math.sin(t / 20) * 3;
+      const diskTotal = 194 * GB;
+      const diskFree = 66.2 * GB;
+      return {
+        CollectedAt: new Date().toISOString(),
+        HealthScore: 88,
+        HealthMessage: '内存压力偏高',
+        Hostname: 'wsj19-PC',
+        OS: 'windows',
+        Platform: 'Windows 11 26H2',
+        UptimeSeconds: 22 * 3600 + 34 * 60,
+        CPUModel: 'Intel(R) Core(TM) 5 210H',
+        CPUCores: 12,
+        CPUPercent: 14 + Math.abs(Math.sin(t / 6)) * 18,
+        MemTotal: memTotal,
+        MemUsed: memTotal * memPct / 100,
+        MemPercent: memPct,
+        SwapTotal: 19.7 * GB,
+        SwapUsed: 17.6 * GB,
+        SwapPercent: 89,
+        Disks: [{ Device: 'C:', Mountpoint: 'C:\\', Total: diskTotal, Used: diskTotal - diskFree, Free: diskFree, UsedPercent: (diskTotal - diskFree) / diskTotal * 100, Fstype: 'NTFS' }],
+        Networks: [],
+        NetRecvPerSec: 89 * 1024 + Math.random() * 40 * 1024,
+        NetSentPerSec: 12 * 1024 + Math.random() * 8 * 1024,
+        BatteryPercent: 99,
+        BatteryCharging: false,
+        BatteryPresent: true,
+        TopProcesses: [
+          { PID: 29040, Name: 'Google Chrome', CPU: 2.1, Memory: 2.1 * GB, MemPct: 12.5 },
+          { PID: 15892, Name: 'Claude', CPU: 1.3, Memory: 1.3 * GB, MemPct: 7.7 },
+          { PID: 8088, Name: 'Node.js JavaScript Runtime', CPU: 0.4, Memory: 860 * 1048576, MemPct: 5.1 },
+          { PID: 29172, Name: 'Claude Code', CPU: 0.3, Memory: 599 * 1048576, MemPct: 3.6 },
+          { PID: 21180, Name: 'Microsoft Edge WebView2', CPU: 0.1, Memory: 538 * 1048576, MemPct: 3.2 }
+        ]
+      };
+    },
+    analyze: async (path) => {
+      const n = findAnalyze(MOCK_ANALYZE, path) || MOCK_ANALYZE;
+      if (!n.Largest) {
+        const prefix = (path || '').toLowerCase();
+        n.Largest = MOCK_ANALYZE.Largest.filter((f) => !prefix || f.Path.toLowerCase().startsWith(prefix));
+      }
+      return n;
+    },
+    analyzeDrives: async () => MOCK_DRIVES,
+    recyclePath: async () => null,
+    revealPath: async () => null,
+    copyText: async () => null,
     openPath: async () => null,
+    windowMinimise: () => {},
+    windowToggleMaximise: () => {},
+    windowClose: () => {},
     on: (event, handler) => { (listeners[event] = listeners[event] || []).push(handler); },
     // Dev handle for jumping straight to a given state from the console:
     //   scanResult = QDF._mock.scan; scanState = 'review'; renderClean()
-    _mock: { scan: MOCK_SCAN, clean: MOCK_CLEAN, history: MOCK_HISTORY },
+    _mock: { scan: MOCK_SCAN, clean: MOCK_CLEAN, history: MOCK_HISTORY, analyze: MOCK_ANALYZE },
   };
 })();
