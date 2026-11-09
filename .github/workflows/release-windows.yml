@@ -87,13 +87,17 @@ jobs:
               fh.write(section.rstrip() + '\n')
           print(f'Extracted {len(section)} chars for {tag}')
           PY
+      - name: Combine release checksums
+        shell: bash
+        run: |
+          cat portable/build-*/SHA256SUMS.txt portable/installer-*/SHA256SUMS.txt > SHA256SUMS.txt
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           files: |
             portable/build-*/qingdaofu-*-x64.zip
             portable/installer-*/QingDaoFu-*-x64-setup.exe
-            portable/build-*/SHA256SUMS.txt
-            portable/installer-*/SHA256SUMS.txt
+            SHA256SUMS.txt
           body_path: release-notes.md
           fail_on_unmatched_files: true
           draft: true
