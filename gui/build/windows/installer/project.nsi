@@ -73,8 +73,9 @@ Section "安装"
     File "..\..\payload\使用前必读.txt"
     File "..\..\payload\启动清道夫.cmd"
 
-    CreateShortcut "$SMPROGRAMS\清道夫.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortcut "$DESKTOP\清道夫.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    CreateShortcut "$SMPROGRAMS\清道夫.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
+    CreateShortcut "$DESKTOP\清道夫.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
+    ; Cache the executable icon so Windows does not reuse an old thumbnail.
     !insertmacro wails.writeUninstaller
 SectionEnd
 
