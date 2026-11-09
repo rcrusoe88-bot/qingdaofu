@@ -27,24 +27,31 @@ jobs:
             Install-Module Pester -RequiredVersion 3.4.0 -Scope CurrentUser -Force -SkipPublisherCheck -Confirm:$false
           }
           Import-Module Pester -RequiredVersion 3.4.0 -ErrorAction Stop
-          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis --version=3.11 --no-progress -y
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test backends and frontend
         shell: pwsh
         run: |
-          go test -mod=readonly ./gui ./cmd/...
+          go test -mod=readonly ./gui ./cmd/... ./internal/...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --test qdf-tests/frontend.test.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build, test and verify portable package
         shell: powershell
         run: ./scripts/build-portable.ps1
+      - name: Build and verify installer package
+        shell: powershell
+        run: ./packaging/Build-Installer.ps1 -SkipTests
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: QingDaoFu-Portable
           path: |
-            release/**/qingdaofu-*-x64.zip
-            release/**/SHA256SUMS.txt
+            release/build-*/qingdaofu-*-x64.zip
+            release/installer-*/QingDaoFu-*-x64-setup.exe
+            release/build-*/SHA256SUMS.txt
+            release/installer-*/SHA256SUMS.txt
           if-no-files-found: error
   publish:
     if: startsWith(github.ref, 'refs/tags/')
@@ -83,8 +90,10 @@ jobs:
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           files: |
-            portable/**/*.zip
-            portable/**/SHA256SUMS.txt
+            portable/build-*/qingdaofu-*-x64.zip
+            portable/installer-*/QingDaoFu-*-x64-setup.exe
+            portable/build-*/SHA256SUMS.txt
+            portable/installer-*/SHA256SUMS.txt
           body_path: release-notes.md
           fail_on_unmatched_files: true
           draft: true

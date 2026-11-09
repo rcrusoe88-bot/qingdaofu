@@ -1,5 +1,29 @@
 # 清道夫发布记录
 
+## v1.3.1 — 一键安装版
+
+发布日期：2026-11-09。
+
+### 安装与启动
+
+- 新增 `QingDaoFu-1.3.1-x64-setup.exe`：用户级安装，不需要管理员权限；自动安装完整的 EXE、`app\`、`rules\`、说明文件和启动器。
+- 安装器检查并静默补装 Microsoft Edge WebView2 Runtime；主程序使用 `wv2runtime.embed` 策略，缺少运行库时不再依赖自身联网下载引导器。
+- 安装界面采用简体中文，创建开始菜单和桌面快捷方式，写入 Windows 应用卸载记录，支持立即启动。
+- 检查 Windows 10/11 与 x64 架构；不受支持的系统或架构会显示明确提示而不是"双击没反应"。
+- 启动失败时显示中文错误弹窗，并记录到 `%LOCALAPPDATA%\QingDaoFu\logs\startup-gui.log`。
+
+### 构建与验证
+
+- 新增 `packaging/Build-Installer.ps1` 与 `packaging/Test-Installer.ps1`，固定 Wails CLI `v2.17.0`，构建并校验安装器版本、哈希、脚本关键项和 payload。
+- PowerShell 34 项、Go 后端、前端 5 项测试通过；静默安装、完整文件落地、启动窗口响应、静默卸载与注册表清理均在本机实测通过。
+- v1.3.0 的 tag、Release 和原始 ZIP 附件保持不变；便携版 ZIP 在本版本继续提供。
+
+### 限制
+
+- 按约定暂未配置代码签名，Windows SmartScreen、Defender 与第三方安全软件仍可能拦截；哈希不是数字签名。
+- WebView2 引导器为在线安装，缺少运行库的电脑首次安装需要联网。
+- 仍仅支持 Windows 10 22H2 / Windows 11 x64；不支持 32 位、ARM 或更旧 Windows。
+
 ## v1.3.0 — 四象主题、系统状态与磁盘分析重构
 
 发布日期：2026-11-07。
