@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"log"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -40,10 +39,11 @@ func main() {
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
 			// Keep WebView2 in dark mode so scrollbars and native controls match.
-			Theme: windows.Dark,
+			Theme:    windows.Dark,
+			Messages: startupMessages(),
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		reportStartupFailure(err)
 	}
 }

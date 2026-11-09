@@ -31,16 +31,16 @@ jobs:
       - name: Test Go backends
         shell: pwsh
         run: |
-          go test -mod=readonly ./gui ./cmd/...
+          go test -mod=readonly ./gui ./cmd/... ./internal/...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go vet -mod=readonly ./gui ./cmd/...
+          go vet -mod=readonly ./gui ./cmd/... ./internal/...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test frontend lifecycle
         run: node --test qdf-tests/frontend.test.cjs
       - name: Install matching Wails CLI
         shell: pwsh
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and verify actual portable package
         shell: powershell
